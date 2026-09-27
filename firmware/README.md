@@ -1,5 +1,7 @@
 # ESP32-S3 firmware (ESP-IDF v5.3.2)
 
+ESP-IDF v5.3.1 or v5.3.2 both work (record the exact version you build with; the boot log prints it).
+
 Board: **ESP32-S3-N16R8** (16 MB flash, 8 MB PSRAM; PSRAM intentionally unused).
 Current phase: **Phase 1** (boot, hardware entropy, crypto with self-tests, NVS, user-presence button). USB HID/CTAP come next.
 
@@ -52,3 +54,8 @@ cmake --build build-host
 ctest --test-dir build-host --output-on-failure
 ```
 Requires CMake, a C compiler, and Python with `cryptography` + `cbor2`. (Runs on Linux/macOS; on Windows use WSL or MSYS2, as the test uses AddressSanitizer.)
+
+## Espressif-IDE (Eclipse) instead of the command line
+1. File → Import → Espressif → **Existing IDF Project** → select the `firmware` folder.
+2. In the toolbar's launch-target dropdown choose **esp32s3** and set the serial port to your **COM/UART** port.
+3. Build (hammer icon), then Launch/Run to flash; open the IDF Serial Monitor (Terminal view → ESP-IDF Serial Monitor) at 115200.
