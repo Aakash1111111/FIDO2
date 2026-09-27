@@ -49,7 +49,8 @@ The research contribution is the **transparent, measurable, layer-by-layer imple
 **In scope (core, needed by the deadline; priority from H§HANDOFF):**
 1. ESP32-S3 firmware: USB HID, CTAPHID, CTAP2 `getInfo` / `makeCredential` / `getAssertion`, P-256/SHA-256 through mbedTLS, NVS credential store, button user presence.
 2. Local WebAuthn relying party (RP): backend with a maintained server library, frontend with Register/Login buttons, and the DB tables `users` / `credentials` / `challenges`.
-3. Evaluation harness: T01–T12, metrics M1–M8 exported as CSV, and an environment record.
+3. Evaluation harness: T01–T12 (+T13 cross-device), metrics M1–M8 exported as CSV, and an environment record.
+4. **PC + mobile [DECIDED 27 Sep]:** the same web RP works on Windows PCs and on mobile browsers (Android Chrome over USB-OTG; iPhone USB-C optional), with the ESP32-S3 key plugged into either. Development happens on Windows. Details and consequences (HTTPS hostname, U2F priority, responsive UI): [`RISKS_AND_OPEN_QUESTIONS.md` §D](RISKS_AND_OPEN_QUESTIONS.md).
 
 **Stretch (only after the core works end to end, per H§HANDOFF priority):** CTAP1/U2F over `CTAPHID_MSG`, discoverable (resident) credentials, flash encryption / secure boot hardening.
 
@@ -377,6 +378,7 @@ Unit → integration → system → security testing (H§22).
 | T12 | Repeated registration/login | Harness loop N trials | Consistent; feeds metrics | H§22 |
 | T-UP | Silent signing | Harness: getAssertion with up=true, no press | `CTAP2_ERR_USER_ACTION_TIMEOUT`; no signature emitted | H§13 → [NEW] test ID |
 | T-RST | Restart mid-state | Unplug during UP wait / right after makeCredential | No corrupted records at boot; counters monotonic | H§13 → [NEW] test ID |
+| T13 | Cross-device | Register on the Windows PC, log in on the Android phone with the same key (same RP ID over HTTPS) | Login succeeds; sign_count continues | [NEW] |
 | T-CNT | Counter behaviour | Consecutive assertions | Strictly increasing signCount; survives reboot | [NEW] |
 
 **Record for reproducibility (H§22):** board model and revision, ESP-IDF version (git describe), toolchain version, component versions (`dependencies.lock`), flashing method, firmware size, compile issues and fixes, boot log, flash time, USB descriptors, report size/framing, host OS + kernel, browser versions, python/package versions (`requirements.lock`), and number of trials. The harness writes `results/<run_id>/environment.json` automatically [NEW].

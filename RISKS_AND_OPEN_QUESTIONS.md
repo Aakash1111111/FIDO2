@@ -41,13 +41,13 @@ No workaround listed here is implemented until its security implications have be
 |---|---|---|---|---|
 | Q1 | Exact ESP32-S3 board; which connector is native USB (H§27.1) | DevKitC-1 / other | Tell us the model; a DevKitC-1 style board with two USB-C ports is ideal | P1–P2 |
 | Q2 | From scratch vs adapt an open-source stack (H§27.2) | (a) from scratch with mbedTLS+TinyCBOR; (b) port SoloKeys (Apache-2.0/MIT) or similar; (c) Rust OpenSK | **(a)**: small, transparent, fits "transparent" motivation, clean licence; the paper states which libraries were reused | P3–P6 |
-| Q3 | CTAP1/U2F implemented? (H§27.3) | core / stretch / drop | **Stretch.** If not done, Fig. 1 marks U2F as "architecture support, not evaluated", or it is removed; the paper title says "FIDO2/U2F compliant", so the team must decide how to phrase this | Title claim |
+| Q3 | CTAP1/U2F implemented? (H§27.3) | core / stretch / drop | **Raised to "high priority after CTAP2 works"** (was stretch): mobile support needs it (see §D), and the title says "FIDO2/U2F". Its value on Android must still be confirmed by testing [SPEC-VERIFY] | Title claim, Android |
 | Q4 | Button and GPIO (H§27.4) | BOOT (GPIO0) / external | **BOOT button**, UP timeout 30 s | P1, P6 |
 | Q5 | clientPIN/UV (H§27.5) | implement / not | **Not implemented** (deadline); a stated limitation | P6, P7 |
 | Q6 | Discoverable credentials (H§27.6) | rk yes / no | **No** in core (username-first); rk stretch | P6, P7, UI |
 | Q7 | Attestation + AAGUID (H§27.7) | none / packed-self | **packed self**, RP `attestation:"direct"`, accepts `none`+`packed`(self); random AAGUID fixed in source | P6, P7 |
 | Q8 | Backend stack (H§27.8) | Python/FastAPI/py_webauthn; Node/SimpleWebAuthn; Go | **Python** (shared with harness) | P7 |
-| Q9 | Browsers/OS; N (H§27.9, H§22) | 30 / 50 | **Chrome + Firefox on Linux** (+Windows/Edge if available); **N = 50** CTAP-level, 10 per browser end to end | P9, P11 |
+| Q9 | Browsers/OS; N (H§27.9, H§22) | 30 / 50 | **Windows 10/11 (Chrome, Edge, Firefox) + Android Chrome over USB-OTG (+ iPhone Safari over USB-C if available)**; **N = 50** CTAP-level, 10 per browser/device end to end | P9, P11 |
 | Q10 | Flash encryption / secure boot (H§27.10) | off / dev-mode / release | **Off** for the core, stated limitation; optional stretch evaluation | P13 |
 | Q11 | What is already complete (H§27.11) | — | Confirm: nothing exists yet? Any existing firmware code should be committed to the repo first | Plan |
 | Q12 | CTAP version claimed [NEW] | 2.0 / 2.1 | **CTAP 2.0 subset** (`FIDO_2_0`); 2.1 adds mandatory features we won't implement | P6, paper wording |
@@ -67,3 +67,34 @@ No workaround listed here is implemented until its security implications have be
 6. **Metrics say "USB latency"** without a definition → operationalised as the PING sweep + RTT decomposition (spec §17 M3); confirm.
 7. **Backend "log verification failures"** but no schema → `auth_events` table added [NEW].
 8. **No statement of which browser/OS is the primary target**; Windows changes the host-side architecture (webauthn.dll), so the harness should run on Linux/macOS.
+
+## D. Platform decisions (Windows development machine, PC + mobile targets) [NEW, 27 Sep]
+
+**Windows is enough; Linux is not required.**
+- ESP-IDF: the official Windows installer or the VS Code ESP-IDF extension. `idf.py build flash monitor` works from the ESP-IDF PowerShell/CMD.
+- RP backend (Python/FastAPI) and frontend: run natively on Windows.
+- Browsers on Windows 10 1903+ (Chrome, Edge, Firefox) do not talk to the key themselves. They go through the Windows WebAuthn API (`webauthn.dll`), which shows the "Windows Security" dialog. This is the real-world Windows path, so the browser tests stay valid.
+- **The one restriction:** Windows blocks non-administrator programs from opening FIDO HID devices directly. The evaluation harness (python-fido2, raw malformed packets for T04) must therefore run from an **Administrator** terminal. *Security implication:* the harness gets full access to the key (and admin rights on a lab PC). That is acceptable for a local test machine: run only the project's harness elevated, never the RP or browser. Alternative: WSL2 + `usbipd-win` to hand the USB device to Linux. That is more setup, so it is not recommended under the deadline.
+- udev rules (`tools/70-fido-esp32.rules`) are only needed if a Linux host is used.
+
+**PC + mobile compatibility means the web app is mobile-ready and the key works when plugged into a phone. No native app is planned.** The same web RP serves both. A native Android/iOS app would need Digital Asset Links / Associated Domains and platform FIDO APIs, which is out of scope for the deadline.
+
+| Target | How the key connects | Status / caveat |
+|---|---|---|
+| Windows PC (Chrome/Edge/Firefox) | USB-C/A cable to the native USB port | Through `webauthn.dll`; expected to work with CTAP2 |
+| Android (Chrome) | USB-C OTG (USB-C↔USB-C data cable, or OTG adapter) | Uses Google Play Services FIDO. [ASSUMED/SPEC-VERIFY] Android has historically used **CTAP1/U2F** with USB security keys for non-discoverable credentials, so U2F support may be required for Android. Verify by testing: check getInfo traffic vs CTAPHID_MSG in the UART log |
+| iPhone 15+ (USB-C, Safari/any iOS browser) | USB-C cable | iOS supports FIDO security keys over USB-C/Lightning/NFC [SPEC-VERIFY]. Optional test if a device is available |
+| Older iPhone (Lightning) | Lightning→USB camera adapter | Power budget may be too low; optional |
+
+**Consequences for the architecture:**
+1. **HTTPS with a real hostname is mandatory for mobile.** The phone cannot use `http://localhost`, `http://192.168.x.x` is not a secure context, and IP addresses are not valid RP IDs. Options:
+   - (a) A tunnel with a **fixed** hostname (ngrok static domain or Cloudflare named tunnel) in front of the RP running on the PC. **Recommended.**
+   - (b) Deploy the RP to a small cloud host with TLS.
+   - (c) mkcert, with the local CA installed on the phone. Fiddly, and not recommended.
+   - The RP ID must equal that hostname, and **must stay the same for the whole experiment**: credentials are bound to the RP ID, so a key registered on `localhost` will not log in on the tunnel hostname.
+   - *Security implication:* the RP becomes reachable from the internet. So: `RP_EXPERIMENT_MODE` off, rate limiting on `/register/*` and `/login/*`, a strong `SESSION_SECRET`, Secure cookies, no real user data, and the tunnel shut down after testing.
+2. **Same credential on both devices:** because the key carries the credential, a user registered on the PC can log in on the phone with the same token under the same RP ID. This is a good cross-device demo for the paper (new test **T13**).
+3. **RP options for mobile:** `allowCredentials[].transports = ["usb"]`, `authenticatorAttachment: "cross-platform"`, `hints: ["security-key"]`. These stop phones from steering users to built-in passkeys / Google Password Manager.
+4. **Frontend:** responsive layout (single column, 44 px touch targets, viewport meta), no hover-only UI, readable error messages for mobile `NotAllowedError`.
+5. **Power:** the phone powers the ESP32-S3 over OTG. Keep Wi-Fi/BT off in the firmware; measure current if possible.
+6. **Evaluation matrix:** M4 and M8 are reported per (device, OS, browser). Interoperability is claimed only for combinations actually tested.
