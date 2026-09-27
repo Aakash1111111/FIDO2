@@ -1,6 +1,6 @@
 # ESP32-S3 firmware (ESP-IDF v5.3.2)
 
-ESP-IDF v5.3.1 or v5.3.2 both work (record the exact version you build with; the boot log prints it).
+Any ESP-IDF v5.3.x works (tested: v5.3.2 cloud build, v5.3.6 on the implementer's PC) (record the exact version you build with; the boot log prints it).
 
 Board: **ESP32-S3-N16R8** (16 MB flash, 8 MB PSRAM; PSRAM intentionally unused).
 Current phase: **Phase 1** (boot, hardware entropy, crypto with self-tests, NVS, user-presence button). USB HID/CTAP come next.
@@ -35,7 +35,8 @@ I (...) hal_rng: hardware entropy source enabled (SAR ADC noise)
 EVT,STORAGE,used_entries=...,free_entries=...,total_entries=...
 I (...) fido: crypto self-test passed (SHA-256 KAT, RFC 6979 ECDSA KAT, verify KAT, DRBG health)
 METRIC,selftest_us,0,<t>
-METRIC,keygen_pct_us,0,<t>     (x20 iterations: keygen incl. pairwise test)
+METRIC,keygen_total_us,0,<t>  (x20: reseed + keygen + pairwise test)
+METRIC,pct_us,0,<t>           (pairwise test alone)
 METRIC,sign_us,0,<t>
 METRIC,verify_us,0,<t>
 METRIC,sig_der_bytes,0,<70..72>

@@ -31,7 +31,7 @@
 #include "hal_esp32s3.h"
 
 #define FIDO_NVS_PARTITION "fido"
-#define FW_VERSION         "0.1.0-phase1"
+#define FW_VERSION         "0.1.1-phase1"
 
 static const char *TAG = "fido";
 
@@ -50,9 +50,22 @@ static void log_environment(void)
     esp_chip_info_t chip;
     esp_chip_info(&chip);
     ESP_LOGI(TAG, "FIDO2 token firmware %s", FW_VERSION);
-    printf("EVT,ENV,fw=%s,idf=%s,mbedtls=%s,chip_rev=%d,cores=%d\n",
+    printf("EVT,ENV,fw=%s,idf=%s,mbedtls=%s,chip_rev=%d,cores=%d,cpu_mhz=%d,opt=%s,ecp_fixed_point=%d\n",
            FW_VERSION, esp_get_idf_version(), MBEDTLS_VERSION_STRING,
-           chip.revision, chip.cores);
+           chip.revision, chip.cores, CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
+#if CONFIG_COMPILER_OPTIMIZATION_PERF
+           "O2",
+#elif CONFIG_COMPILER_OPTIMIZATION_SIZE
+           "Os",
+#else
+           "Og",
+#endif
+#ifdef CONFIG_MBEDTLS_ECP_FIXED_POINT_OPTIM
+           1
+#else
+           0
+#endif
+           );
 }
 
 static void storage_init(void)
@@ -124,18 +137,24 @@ static void crypto_benchmark(void)
             halt("BENCH_RNG");
         }
 
+        /* t0..t1 keygen (reseed + keygen + pairwise test), t1..t2 pairwise
+         * test alone, t2..t3 sign, t3..t4 verify. */
         int64_t t0 = esp_timer_get_time();
-        fc_status_t st = fc_p256_keygen(priv, pub);   /* includes pairwise test */
+        fc_status_t st = fc_p256_keygen(priv, pub);
         int64_t t1 = esp_timer_get_time();
+        if (st == FC_OK) {
+            st = fc_p256_pct(priv, pub);
+        }
+        int64_t t2 = esp_timer_get_time();
         if (st == FC_OK) {
             st = fc_es256_sign(priv, auth_data, sizeof(auth_data), cdh, sizeof(cdh),
                                sig, sizeof(sig), &sig_len);
         }
-        int64_t t2 = esp_timer_get_time();
+        int64_t t3 = esp_timer_get_time();
         if (st == FC_OK) {
             st = fc_es256_verify(pub, auth_data, sizeof(auth_data), cdh, sizeof(cdh), sig, sig_len);
         }
-        int64_t t3 = esp_timer_get_time();
+        int64_t t4 = esp_timer_get_time();
         if (st == FC_OK) {
             st = fc_cose_es256_pubkey(pub, cose, sizeof(cose), &cose_len);
         }
@@ -145,10 +164,15 @@ static void crypto_benchmark(void)
             ESP_LOGE(TAG, "benchmark iteration %d failed: %s", i, fc_status_str(st));
             halt("BENCH");
         }
-        printf("METRIC,keygen_pct_us,%d,%" PRId64 "\n", i, t1 - t0);
-        printf("METRIC,sign_us,%d,%" PRId64 "\n", i, t2 - t1);
-        printf("METRIC,verify_us,%d,%" PRId64 "\n", i, t3 - t2);
+        printf("METRIC,keygen_total_us,%d,%" PRId64 "\n", i, t1 - t0);
+        printf("METRIC,pct_us,%d,%" PRId64 "\n", i, t2 - t1);
+        printf("METRIC,sign_us,%d,%" PRId64 "\n", i, t3 - t2);
+        printf("METRIC,verify_us,%d,%" PRId64 "\n", i, t4 - t3);
         printf("METRIC,sig_der_bytes,%d,%u\n", i, (unsigned)sig_len);
+
+        /* Yield so the IDLE task can run and the task watchdog is not
+         * triggered by this long research-only loop. */
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
     ESP_LOGI(TAG, "crypto benchmark done (%d iterations)", CONFIG_FIDO_BENCH_ITERATIONS);
 }

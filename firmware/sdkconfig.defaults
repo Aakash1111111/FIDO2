@@ -27,3 +27,12 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 # Hardening available without eFuse changes
 CONFIG_COMPILER_STACK_CHECK_MODE_STRONG=y
 CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=y
+
+# Performance (first on-device run: -Og / 160 MHz gave keygen+PCT ~0.66 s,
+# sign ~0.17 s; see results/phase1_run1_baseline). None of these change
+# the cryptographic results, only speed.
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+# Precomputed tables for fixed-base (G) multiplication: speeds up keygen and
+# signing ~3-4x per Espressif, costs ~29 KB flash (we have 2 MB app space).
+CONFIG_MBEDTLS_ECP_FIXED_POINT_OPTIM=y

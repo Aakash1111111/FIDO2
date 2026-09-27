@@ -12,6 +12,6 @@ Captured 27 Sep 2026 by the implementer on Windows (`Get-PnpDevice`, `esptool.py
 | COM/UART port | WCH CH343 USB-serial, `USB\VID_1A86&PID_55D3`, Windows COM8 (flashing + logs) |
 | Native USB port | reserved for the FIDO HID interface (Phase 2) |
 | Host OS | Windows (version to be recorded) |
-| ESP-IDF on host | v5.3.1 (local); esptool.py v4.12.0 |
+| ESP-IDF on host | v5.3.6 (local, per build paths); esptool.py v4.12.0 |
 
 The device MAC address is deliberately not recorded here (device identifier, not needed for reproducibility).

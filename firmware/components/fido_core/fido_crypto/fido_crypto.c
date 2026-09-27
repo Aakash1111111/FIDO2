@@ -86,9 +86,13 @@ fc_status_t fc_crypto_init(fc_entropy_fn entropy, void *entropy_ctx,
                               pers, pers_len) != 0) {
         goto fail;
     }
-    /* Prediction resistance: reseed from hardware entropy before every
-     * output. Costs a little time; removes reliance on DRBG state secrecy. */
-    mbedtls_ctr_drbg_set_prediction_resistance(&s_ctx.drbg, MBEDTLS_CTR_DRBG_PR_ON);
+    /* Prediction resistance is OFF: the first on-device run showed that
+     * reseeding before every output (including the many small blinding
+     * requests inside ECDSA/ECP) dominated latency. Instead the DRBG is
+     * explicitly reseeded from hardware entropy before every key generation
+     * (fc_p256_keygen), so each private key still draws fresh hardware
+     * entropy, and mbedTLS's periodic reseed interval applies otherwise
+     * (NIST SP 800-90A CTR_DRBG). */
 
     s_ctx.initialized = 1;
     return FC_OK;
@@ -338,14 +342,32 @@ out:
     return st;
 }
 
+fc_status_t fc_p256_pct(const uint8_t priv[FC_P256_PRIV_LEN], const uint8_t pub[FC_P256_PUB_LEN])
+{
+    /* Pairwise-consistency test (FIPS 140-3 style): prove the private key and
+     * the public key we are about to publish belong together. */
+    static const uint8_t pct_msg[] = "fido-crypto pairwise consistency test";
+    uint8_t sig[FC_ECDSA_DER_MAX];
+    size_t sig_len = 0;
+    fc_status_t st;
+
+    if (priv == NULL || pub == NULL) {
+        return FC_ERR_ARG;
+    }
+    st = fc_es256_sign(priv, pct_msg, sizeof(pct_msg), NULL, 0, sig, sizeof(sig), &sig_len);
+    if (st == FC_OK) {
+        st = fc_es256_verify(pub, pct_msg, sizeof(pct_msg), NULL, 0, sig, sig_len);
+    }
+    fc_zeroize(sig, sizeof(sig));
+    return st == FC_OK ? FC_OK : FC_ERR_SELFTEST;
+}
+
 fc_status_t fc_p256_keygen(uint8_t priv[FC_P256_PRIV_LEN], uint8_t pub[FC_P256_PUB_LEN])
 {
-    static const uint8_t pct_msg[] = "fido-crypto pairwise consistency test";
     mbedtls_ecp_group grp;
     mbedtls_mpi d;
     mbedtls_ecp_point q;
-    uint8_t sig[FC_ECDSA_DER_MAX];
-    size_t sig_len = 0, olen = 0;
+    size_t olen = 0;
     fc_status_t st;
 
     if (priv == NULL || pub == NULL) {
@@ -353,6 +375,10 @@ fc_status_t fc_p256_keygen(uint8_t priv[FC_P256_PRIV_LEN], uint8_t pub[FC_P256_P
     }
     if (!s_ctx.initialized) {
         return FC_ERR_NOT_INIT;
+    }
+    /* Fresh hardware entropy for every private key. */
+    if (mbedtls_ctr_drbg_reseed(&s_ctx.drbg, NULL, 0) != 0) {
+        return FC_ERR_RNG;
     }
 
     mbedtls_ecp_group_init(&grp);
@@ -371,16 +397,7 @@ fc_status_t fc_p256_keygen(uint8_t priv[FC_P256_PRIV_LEN], uint8_t pub[FC_P256_P
         st = FC_ERR_KEYGEN;
         goto out;
     }
-
-    /* Pairwise-consistency test (FIPS 140-3 style): prove the new private
-     * key and the public key we are about to publish belong together. */
-    st = fc_es256_sign(priv, pct_msg, sizeof(pct_msg), NULL, 0, sig, sizeof(sig), &sig_len);
-    if (st == FC_OK) {
-        st = fc_es256_verify(pub, pct_msg, sizeof(pct_msg), NULL, 0, sig, sig_len);
-    }
-    if (st != FC_OK) {
-        st = FC_ERR_SELFTEST;
-    }
+    st = fc_p256_pct(priv, pub);
 
 out:
     if (st != FC_OK) {

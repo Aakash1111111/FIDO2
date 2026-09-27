@@ -1,0 +1,17 @@
+metric,iteration,value_us
+keygen_pct_us,16,720614
+sign_us,16,170016
+verify_us,16,327641
+sig_der_bytes,16,71
+keygen_pct_us,17,655959
+sign_us,17,170047
+verify_us,17,327210
+sig_der_bytes,17,72
+keygen_pct_us,18,656011
+sign_us,18,169803
+verify_us,18,327347
+sig_der_bytes,18,71
+keygen_pct_us,19,655823
+sign_us,19,169917
+verify_us,19,327629
+sig_der_bytes,19,71

@@ -10,7 +10,7 @@
  *   Nonces    : deterministic (RFC 6979) — signature security does not depend
  *               on the RNG at signing time
  *   RNG       : CTR-DRBG (AES-256) seeded from a caller-supplied hardware
- *               entropy source
+ *               entropy source; reseeded from hardware before every keygen
  *   Self-test : known-answer tests at boot + pairwise-consistency test on
  *               every generated key
  *
@@ -90,6 +90,14 @@ fc_status_t fc_sha256(const uint8_t *in, size_t len, uint8_t out[FC_SHA256_LEN])
  */
 fc_status_t fc_p256_keygen(uint8_t priv[FC_P256_PRIV_LEN],
                            uint8_t pub[FC_P256_PUB_LEN]);
+
+/*
+ * Pairwise-consistency test: sign a fixed message with `priv` and verify it
+ * with `pub`. Called by fc_p256_keygen(); exposed so its cost can be measured
+ * separately. Returns FC_OK or FC_ERR_SELFTEST.
+ */
+fc_status_t fc_p256_pct(const uint8_t priv[FC_P256_PRIV_LEN],
+                        const uint8_t pub[FC_P256_PUB_LEN]);
 
 /*
  * ES256 signature over (m1 || m2), hashed with SHA-256 inside this call.
