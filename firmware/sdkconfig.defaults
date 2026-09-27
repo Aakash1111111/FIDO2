@@ -1,0 +1,29 @@
+# Pinned configuration for the FIDO2 token (ESP32-S3-N16R8).
+# Only non-default values are listed; `idf.py build` expands the rest.
+CONFIG_IDF_TARGET="esp32s3"
+
+# Flash / partitions (N16R8 = 16 MB quad flash, 8 MB octal PSRAM)
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+# PSRAM deliberately left disabled: key material must stay in internal SRAM,
+# never in external (off-chip) PSRAM.
+
+# Console on UART0 (the board's "COM"/UART connector). The native USB
+# connector is reserved for the FIDO HID interface (Phase 2).
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+# mbedTLS: P-256, deterministic ECDSA (RFC 6979), hardware SHA/MPI accel.
+CONFIG_MBEDTLS_ECP_C=y
+CONFIG_MBEDTLS_ECDSA_C=y
+CONFIG_MBEDTLS_ECP_DP_SECP256R1_ENABLED=y
+CONFIG_MBEDTLS_ECDSA_DETERMINISTIC=y
+CONFIG_MBEDTLS_HARDWARE_SHA=y
+CONFIG_MBEDTLS_HARDWARE_MPI=y
+
+# ECDSA needs a larger stack than the default main task provides.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# Hardening available without eFuse changes
+CONFIG_COMPILER_STACK_CHECK_MODE_STRONG=y
+CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=y

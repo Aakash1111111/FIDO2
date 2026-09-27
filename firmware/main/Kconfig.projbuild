@@ -1,0 +1,27 @@
+menu "FIDO2 token"
+
+    config FIDO_UP_GPIO
+        int "User-presence button GPIO"
+        default 0
+        help
+            GPIO of the user-presence button (active low, internal pull-up).
+            Default 0 = the on-board BOOT button. Do not hold it while
+            plugging in: GPIO0 low at reset enters download mode.
+
+    config FIDO_UP_TIMEOUT_MS
+        int "User-presence timeout (ms)"
+        default 30000
+
+    config FIDO_METRICS
+        bool "Emit METRIC timing lines on the console (research instrumentation)"
+        default y
+        help
+            Research/experimental functionality. Disable for a production-like
+            build; logic is unchanged, only timing log lines are removed.
+
+    config FIDO_BENCH_ITERATIONS
+        int "Crypto benchmark iterations at boot (0 = off)"
+        depends on FIDO_METRICS
+        default 20
+
+endmenu

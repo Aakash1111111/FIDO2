@@ -1,0 +1,15 @@
+# ESP-IDF
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/managed_components/
+firmware/dependencies.lock.tmp
+# host tests
+build-host/
+# Python
+__pycache__/
+*.pyc
+.venv/
+# RP database (experiment exports go to results/)
+*.sqlite3
+*.db
