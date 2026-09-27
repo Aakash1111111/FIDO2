@@ -13,3 +13,5 @@ __pycache__/
 # RP database (experiment exports go to results/)
 *.sqlite3
 *.db
+firmware/build-host/
+.venv/

@@ -1,8 +1,8 @@
 /*
- * main.c — FIDO2 token firmware entry point (Phase 1: boot + crypto + button).
+ * main.c — FIDO2 token firmware entry point (Phase 2: + USB FIDO HID / CTAPHID).
  *
  * Boot order (ARCHITECTURE.md §2.3): entropy -> storage -> crypto (+ self-test)
- * -> user presence -> [USB HID in Phase 2] -> ready.
+ * -> user presence -> USB HID (CTAPHID) -> ready.
  * Any failure in a security-relevant step halts the token (fail closed):
  * a token that cannot trust its RNG, crypto or storage must not answer hosts.
  *
@@ -22,16 +22,22 @@
 #include "esp_mac.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "mbedtls/version.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
 
+#include "ctaphid.h"
 #include "fido_crypto.h"
 #include "hal_esp32s3.h"
 
 #define FIDO_NVS_PARTITION "fido"
-#define FW_VERSION         "0.1.1-phase1"
+#define FW_VERSION         "0.2.0-phase2"
+#define FW_VERSION_MAJOR   0
+#define FW_VERSION_MINOR   2
+#define FW_VERSION_BUILD   0
+#define RX_QUEUE_LEN       16
 
 static const char *TAG = "fido";
 
@@ -178,6 +184,110 @@ static void crypto_benchmark(void)
 }
 #endif
 
+/* ------------------------------------------------------------------------ */
+/* FIDO worker: USB packets -> CTAPHID -> CTAP command handlers             */
+/* ------------------------------------------------------------------------ */
+
+static QueueHandle_t s_rx_queue;
+static ctaphid_t s_hid;            /* ~7.7 KB (holds one maximum-size message) */
+static uint32_t s_rx_dropped;
+
+static uint32_t now_ms(void)
+{
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
+
+/* TinyUSB task context: just queue the report. */
+static void usb_rx(const uint8_t pkt[64], void *ctx)
+{
+    (void)ctx;
+    if (xQueueSend(s_rx_queue, pkt, 0) != pdTRUE) {
+        s_rx_dropped++;
+    }
+}
+
+static void hid_send(void *ctx, const uint8_t pkt[CTAPHID_PACKET_SIZE])
+{
+    (void)ctx;
+    if (!hal_usb_hid_send(pkt, 100)) {
+        ESP_LOGW(TAG, "USB IN report not sent (host not reading?)");
+    }
+}
+
+/* Phase 2: CTAP2 commands are not implemented yet. Reply with
+ * CTAP1_ERR_INVALID_COMMAND so hosts fail fast instead of timing out. */
+static void handle_cbor(ctaphid_t *h)
+{
+    const uint8_t status = 0x01; /* CTAP1_ERR_INVALID_COMMAND [SPEC-VERIFY] */
+    printf("EVT,CBOR_REQ,cmd=0x%02x,len=%u,resp=INVALID_COMMAND\n", h->msg[0], h->msg_len);
+    ctaphid_send(h, h->msg_cid, CTAPHID_CBOR, &status, 1);
+}
+
+/* CTAP1/U2F is not implemented yet: ISO 7816 SW_INS_NOT_SUPPORTED. */
+static void handle_msg(ctaphid_t *h)
+{
+    static const uint8_t sw[2] = { 0x6D, 0x00 };
+    printf("EVT,U2F_REQ,len=%u,resp=6D00\n", h->msg_len);
+    ctaphid_send(h, h->msg_cid, CTAPHID_MSG, sw, sizeof(sw));
+}
+
+static void fido_task(void *arg)
+{
+    (void)arg;
+    uint8_t pkt[CTAPHID_PACKET_SIZE];
+    bool mounted = false;
+
+    for (;;) {
+        if (xQueueReceive(s_rx_queue, pkt, pdMS_TO_TICKS(50)) == pdTRUE) {
+            const int64_t t0 = esp_timer_get_time();
+            const ctaphid_event_t ev = ctaphid_handle_packet(&s_hid, pkt, now_ms());
+            if (ev != CTAPHID_EVT_NONE) {
+                if (ev == CTAPHID_EVT_CBOR) {
+                    handle_cbor(&s_hid);
+                } else {
+                    handle_msg(&s_hid);
+                }
+                ctaphid_transaction_done(&s_hid);
+#if CONFIG_FIDO_METRICS
+                printf("METRIC,ctap_cmd_us,0,%" PRId64 "\n", esp_timer_get_time() - t0);
+#endif
+            }
+            (void)t0;
+        } else {
+            ctaphid_poll_timeout(&s_hid, now_ms());
+        }
+
+        const bool m = hal_usb_hid_mounted();
+        if (m != mounted) {
+            mounted = m;
+            printf("EVT,USB,%s,rx_dropped=%" PRIu32 "\n", m ? "MOUNTED" : "UNMOUNTED", s_rx_dropped);
+        }
+    }
+}
+
+static void usb_start(void)
+{
+    const ctaphid_config_t cfg = {
+        .send_packet = hid_send,
+        .ctx = NULL,
+        /* CBOR supported; NMSG = CTAPHID_MSG (U2F) not implemented yet */
+        .capabilities = CTAPHID_CAPABILITY_CBOR | CTAPHID_CAPABILITY_NMSG,
+        .version_major = FW_VERSION_MAJOR,
+        .version_minor = FW_VERSION_MINOR,
+        .version_build = FW_VERSION_BUILD,
+    };
+    ctaphid_init(&s_hid, &cfg);
+
+    s_rx_queue = xQueueCreate(RX_QUEUE_LEN, CTAPHID_PACKET_SIZE);
+    if (s_rx_queue == NULL ||
+        xTaskCreate(fido_task, "fido", 8192, NULL, 5, NULL) != pdPASS) {
+        halt("FIDO_TASK");
+    }
+    if (hal_usb_hid_init(usb_rx, NULL) != ESP_OK) {
+        halt("USB_INIT");
+    }
+}
+
 /* Phase 1 demo: prove the UP button works. Replaced by the CTAP UP gate. */
 static void button_demo_task(void *arg)
 {
@@ -214,7 +324,9 @@ void app_main(void)
         halt("BUTTON_INIT");
     }
 
-    printf("EVT,BOOT_OK,phase=1,heap_free=%u,heap_min=%u\n",
+    usb_start();
+
+    printf("EVT,BOOT_OK,phase=2,heap_free=%u,heap_min=%u\n",
            (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size());
 
     xTaskCreate(button_demo_task, "up_demo", 4096, NULL, 5, NULL);

@@ -36,3 +36,6 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 # Precomputed tables for fixed-base (G) multiplication: speeds up keygen and
 # signing ~3-4x per Espressif, costs ~29 KB flash (we have 2 MB app space).
 CONFIG_MBEDTLS_ECP_FIXED_POINT_OPTIM=y
+
+# USB: TinyUSB device stack on the native USB port, one HID interface (FIDO).
+CONFIG_TINYUSB_HID_COUNT=1

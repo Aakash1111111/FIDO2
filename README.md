@@ -2,7 +2,7 @@
 
 Research project: *Design and Implementation of a FIDO2/U2F Compliant Authentication Token for Secure Passwordless Authentication*.
 
-**Status: Phase 1 firmware (boot + crypto + button) implemented and host-tested; awaiting first on-device run.**
+**Status: Phase 1 verified on the ESP32-S3 (crypto self-tests + timings); Phase 2 (USB FIDO HID + CTAPHID) implemented and host-tested, awaiting on-device run.**
 
 | Document | Purpose |
 |---|---|
@@ -16,9 +16,9 @@ Research project: *Design and Implementation of a FIDO2/U2F Compliant Authentica
 
 | Component | Proposed | Implemented | Tested | Evidence |
 |---|---|---|---|---|
-| USB HID / CTAPHID | ✔ | – | – | – |
+| USB HID / CTAPHID | ✔ | ✔ | host ✔ (unit + 300k-packet fuzz) / device – | – |
 | CTAP2 getInfo / makeCredential / getAssertion | ✔ | – | – | – |
-| Crypto (mbedTLS P-256, RFC 6979, self-tests) | ✔ | ✔ | host ✔ / device – | – |
+| Crypto (mbedTLS P-256, RFC 6979, self-tests) | ✔ | ✔ | host ✔ / device ✔ | results/phase1_run2_optimized |
 | Credential store (NVS) | ✔ | – | – | – |
 | User presence (button) | ✔ | ✔ (HAL) | – | – |
 | CTAP1/U2F | stretch | – | – | – |
