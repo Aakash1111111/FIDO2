@@ -137,9 +137,12 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
-    print("CBOR / MSG placeholders (Phase 2: CTAP2 not implemented yet)")
+    print("CTAP2 getInfo over CTAPHID_CBOR / U2F placeholder over CTAPHID_MSG")
     resp = dev.call(CTAPHID.CBOR, b"\x04")
-    record("P2", "getInfo -> CTAP1_ERR_INVALID_COMMAND", "01", resp.hex())
+    record("T03", "getInfo status", "00", resp[:1].hex())
+    record("T03", "getInfo lists FIDO_2_0", True, b"FIDO_2_0" in resp)
+    record("T03", "U2F (CTAPHID_MSG) not implemented -> SW 6D00", "6d00",
+           dev.call(CTAPHID.MSG, b"\x00\x03\x00\x00\x00").hex())
 
     print("T04 malformed packets")
     cid = dev._channel_id

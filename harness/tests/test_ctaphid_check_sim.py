@@ -6,7 +6,6 @@ numbers it produces are NOT token measurements.
 """
 import ctypes
 import os
-import subprocess
 import sys
 import tempfile
 import time
@@ -22,13 +21,11 @@ import ctaphid_check  # noqa: E402
 
 
 def build_sim():
-    out = os.path.join(tempfile.mkdtemp(), "libsimtoken.so")
-    core = os.path.join(ROOT, "firmware", "components", "fido_core")
-    subprocess.check_call(["cc", "-shared", "-fPIC", "-O1", "-Wall", "-Werror",
-                           "-I", os.path.join(core, "include"),
-                           os.path.join(HERE, "..", "sim", "sim_token.c"),
-                           os.path.join(core, "ctaphid", "ctaphid.c"), "-o", out])
-    return ctypes.CDLL(out)
+    # Built by firmware/test/host (CMake target sim_token).
+    lib = os.environ.get("SIM_TOKEN_LIB")
+    if not lib or not os.path.exists(lib):
+        sys.exit("set SIM_TOKEN_LIB to the libsim_token.so built by firmware/test/host")
+    return ctypes.CDLL(lib)
 
 
 class SimConnection(CtapHidConnection):
@@ -51,7 +48,7 @@ class SimConnection(CtapHidConnection):
 
 def main():
     lib = build_sim()
-    lib.sim_init()
+    assert lib.sim_init() == 0
     desc = HidDescriptor("sim", 0x303A, 0x4004, 64, 64, "ESP32-S3 FIDO2 Token (SIM)", None)
     CtapHidDevice.list_devices = classmethod(lambda cls: iter([CtapHidDevice(desc, SimConnection(lib))]))
     sys.argv = ["ctaphid_check.py", "--trials", "3", "--out", tempfile.mkdtemp()]

@@ -3,7 +3,7 @@
 Any ESP-IDF v5.3.x works (tested: v5.3.2 cloud build, v5.3.6 on the implementer's PC) (record the exact version you build with; the boot log prints it).
 
 Board: **ESP32-S3-N16R8** (16 MB flash, 8 MB PSRAM; PSRAM intentionally unused).
-Current phase: **Phase 2**: Phase 1 (boot, hardware entropy, crypto self-tests, NVS, button) + the native USB port as a FIDO HID device with the full CTAPHID transport. CTAP2 commands (getInfo / makeCredential / getAssertion) come in Phase 3; until then CBOR requests get `CTAP1_ERR_INVALID_COMMAND`.
+Current phase: **Phase 3**: the token is a working CTAP 2.0 authenticator (getInfo, makeCredential, getAssertion, BOOT-button user presence, credentials in the `fido` NVS partition). Previously: **Phase 2**: Phase 1 (boot, hardware entropy, crypto self-tests, NVS, button) + the native USB port as a FIDO HID device with the full CTAPHID transport. CTAP2 commands (getInfo / makeCredential / getAssertion) come in Phase 3; until then CBOR requests get `CTAP1_ERR_INVALID_COMMAND`.
 
 ## Which USB-C port is which
 Most N16R8 boards have two USB-C connectors:
@@ -82,3 +82,14 @@ The first build after pulling downloads two small ESP components (`esp_tinyusb`,
    ```
    (Use any Python 3.9+. If `Activate.ps1` is blocked: `Set-ExecutionPolicy -Scope Process Bypass`.)
    Expect `28/28 checks passed`. The CSVs in `results\phase2_ctaphid\` are the M3 (USB latency) data.
+
+## Phase 3 test: register and log in (T05–T11)
+1. Build and flash as before; plug in both ports. The boot log shows `EVT,CREDS,valid=0,...` and `EVT,BOOT_OK,phase=3`.
+2. Website: see `rp/README.md` (run `uvicorn`, open http://localhost:8000, register, log in, pressing **BOOT** when asked).
+   Each request logs `EVT,UP_REQUEST` → `EVT,UP_PRESS` and `METRIC,mc_*` / `METRIC,ga_*` timing lines (UP wait excluded from `*_total_excl_up_us`).
+3. Automated security checks (Administrator PowerShell, ~10 button presses):
+   `python harness\e2e_check.py --out results\phase3_e2e`
+4. Persistence (T06): unplug and replug the token, then log in again.
+
+To wipe all credentials on the token (for example between experiment runs):
+`python %IDF_PATH%\components\partition_table\parttool.py -p COM8 erase_partition --partition-name=fido`

@@ -1,5 +1,5 @@
 /*
- * main.c — FIDO2 token firmware entry point (Phase 2: + USB FIDO HID / CTAPHID).
+ * main.c — FIDO2 token firmware entry point (Phase 3: CTAP2 authenticator).
  *
  * Boot order (ARCHITECTURE.md §2.3): entropy -> storage -> crypto (+ self-test)
  * -> user presence -> USB HID (CTAPHID) -> ready.
@@ -28,16 +28,28 @@
 #include "nvs_flash.h"
 #include "sdkconfig.h"
 
+#include "cred_store.h"
+#include "ctap2.h"
 #include "ctaphid.h"
 #include "fido_crypto.h"
 #include "hal_esp32s3.h"
 
 #define FIDO_NVS_PARTITION "fido"
-#define FW_VERSION         "0.2.0-phase2"
+#define FW_VERSION         "0.3.0-phase3"
 #define FW_VERSION_MAJOR   0
-#define FW_VERSION_MINOR   2
+#define FW_VERSION_MINOR   3
 #define FW_VERSION_BUILD   0
 #define RX_QUEUE_LEN       16
+#define MAX_CREDENTIALS    128
+
+/* AAGUID of this authenticator model: a random UUID generated once for the
+ * project (ba17f247-df28-46ce-819d-8488f3b2278c). It is NOT registered with
+ * the FIDO Alliance Metadata Service (no certification is claimed). */
+static const uint8_t AAGUID[CTAP2_AAGUID_LEN] = {
+    0xBA, 0x17, 0xF2, 0x47, 0xDF, 0x28, 0x46, 0xCE, 0x81, 0x9D, 0x84, 0x88, 0xF3, 0xB2, 0x27, 0x8C,
+};
+
+static cred_store_t s_store;
 
 static const char *TAG = "fido";
 
@@ -84,6 +96,19 @@ static void storage_init(void)
         ESP_LOGE(TAG, "nvs_flash_init_partition(%s): %s", FIDO_NVS_PARTITION, esp_err_to_name(err));
         halt("STORAGE_INIT");
     }
+    cred_kv_t kv;
+    if (hal_nvs_kv_open(&kv, MAX_CREDENTIALS) != ESP_OK) {
+        halt("STORAGE_OPEN");
+    }
+    cred_store_init(&s_store, &kv);
+    size_t valid = 0, invalid = 0;
+    if (cred_store_count(&s_store, &valid, &invalid) != CRED_OK) {
+        halt("STORAGE_SCAN");
+    }
+    /* Invalid (corrupted / unknown-version) records are reported and never
+     * used: cred_store_find() rejects them. */
+    printf("EVT,CREDS,valid=%u,invalid=%u,max=%u,record_bytes=%u\n",
+           (unsigned)valid, (unsigned)invalid, (unsigned)MAX_CREDENTIALS, (unsigned)CRED_RECORD_SIZE);
     nvs_stats_t stats;
     if (nvs_get_stats(FIDO_NVS_PARTITION, &stats) == ESP_OK) {
         printf("EVT,STORAGE,used_entries=%u,free_entries=%u,total_entries=%u\n",
@@ -214,13 +239,77 @@ static void hid_send(void *ctx, const uint8_t pkt[CTAPHID_PACKET_SIZE])
     }
 }
 
-/* Phase 2: CTAP2 commands are not implemented yet. Reply with
- * CTAP1_ERR_INVALID_COMMAND so hosts fail fast instead of timing out. */
+/* ---- user presence: physical button, with KEEPALIVE and CANCEL ---------- */
+
+/* Called ~every 100 ms while waiting for the button: keep servicing USB so
+ * the host's CANCEL is seen and other channels get CHANNEL_BUSY. */
+static bool up_poll(void *arg)
+{
+    (void)arg;
+    uint8_t pkt[CTAPHID_PACKET_SIZE];
+    while (xQueueReceive(s_rx_queue, pkt, 0) == pdTRUE) {
+        (void)ctaphid_handle_packet(&s_hid, pkt, now_ms()); /* busy: never yields a new request */
+    }
+    if (ctaphid_cancel_requested(&s_hid)) {
+        return false;
+    }
+    ctaphid_send_keepalive(&s_hid, CTAPHID_STATUS_UPNEEDED);
+    return true;
+}
+
+/* SECURITY-SENSITIVE: the only place that can report user presence. */
+static uint8_t wait_user_presence(void *ctx)
+{
+    (void)ctx;
+    printf("EVT,UP_REQUEST,timeout_ms=%d\n", CONFIG_FIDO_UP_TIMEOUT_MS);
+    const esp_err_t err = hal_button_wait_press(CONFIG_FIDO_UP_TIMEOUT_MS, up_poll, NULL);
+    if (err == ESP_OK) {
+        printf("EVT,UP_PRESS\n");
+        return CTAP2_OK;
+    }
+    if (err == ESP_ERR_INVALID_STATE) {
+        printf("EVT,UP_CANCELLED\n");
+        return CTAP2_ERR_KEEPALIVE_CANCEL;
+    }
+    printf("EVT,UP_TIMEOUT\n");
+    return CTAP2_ERR_USER_ACTION_TIMEOUT;
+}
+
+static int64_t env_now_us(void *ctx)
+{
+    (void)ctx;
+    return esp_timer_get_time();
+}
+
+static uint32_t s_req_seq;
+
+static void env_metric(void *ctx, const char *name, int64_t value)
+{
+    (void)ctx;
+#if CONFIG_FIDO_METRICS
+    printf("METRIC,%s,%" PRIu32 ",%" PRId64 "\n", name, s_req_seq, value);
+#else
+    (void)name; (void)value;
+#endif
+}
+
 static void handle_cbor(ctaphid_t *h)
 {
-    const uint8_t status = 0x01; /* CTAP1_ERR_INVALID_COMMAND [SPEC-VERIFY] */
-    printf("EVT,CBOR_REQ,cmd=0x%02x,len=%u,resp=INVALID_COMMAND\n", h->msg[0], h->msg_len);
-    ctaphid_send(h, h->msg_cid, CTAPHID_CBOR, &status, 1);
+    static uint8_t resp[CTAPHID_MAX_MSG_SIZE];
+    const ctap2_env_t env = {
+        .wait_user_presence = wait_user_presence,
+        .now_us = env_now_us,
+        .metric = env_metric,
+        .ctx = NULL,
+        .aaguid = AAGUID,
+        .store = &s_store,
+    };
+    s_req_seq++;
+    const uint8_t cmd = h->msg[0];
+    const size_t n = ctap2_handle(&env, h->msg, h->msg_len, resp, sizeof(resp));
+    printf("EVT,CTAP2,seq=%" PRIu32 ",cmd=0x%02x,status=0x%02x,resp_len=%u\n",
+           s_req_seq, cmd, resp[0], (unsigned)n);
+    ctaphid_send(h, h->msg_cid, CTAPHID_CBOR, resp, n);
 }
 
 /* CTAP1/U2F is not implemented yet: ISO 7816 SW_INS_NOT_SUPPORTED. */
@@ -288,26 +377,6 @@ static void usb_start(void)
     }
 }
 
-/* Phase 1 demo: prove the UP button works. Replaced by the CTAP UP gate. */
-static void button_demo_task(void *arg)
-{
-    (void)arg;
-    for (;;) {
-        printf("EVT,UP_WAIT,timeout_ms=%d\n", CONFIG_FIDO_UP_TIMEOUT_MS);
-        int64_t t0 = esp_timer_get_time();
-        esp_err_t err = hal_button_wait_press(CONFIG_FIDO_UP_TIMEOUT_MS, NULL, NULL);
-        int64_t t1 = esp_timer_get_time();
-        if (err == ESP_OK) {
-            printf("EVT,UP_PRESS,wait_us=%" PRId64 "\n", t1 - t0);
-            while (hal_button_is_pressed()) {
-                vTaskDelay(pdMS_TO_TICKS(20)); /* wait for release */
-            }
-        } else {
-            printf("EVT,UP_TIMEOUT\n");
-        }
-    }
-}
-
 void app_main(void)
 {
     log_environment();
@@ -326,8 +395,7 @@ void app_main(void)
 
     usb_start();
 
-    printf("EVT,BOOT_OK,phase=2,heap_free=%u,heap_min=%u\n",
+    printf("EVT,BOOT_OK,phase=3,heap_free=%u,heap_min=%u\n",
            (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size());
 
-    xTaskCreate(button_demo_task, "up_demo", 4096, NULL, 5, NULL);
 }

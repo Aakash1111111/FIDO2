@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FIDO2 Token Login</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+<header>
+  <h1>Passwordless login with the ESP32-S3 security key</h1>
+  <p>Research test site (relying party) at <span id="origin" class="mono"></span></p>
+  <nav><a href="/">Login</a><a href="/dashboard">My dashboard</a></nav>
+</header>
+<main>
+  <section class="card">
+    <h2>Account</h2>
+    <label for="username">Username</label>
+    <input id="username" type="text" autocomplete="username webauthn" placeholder="e.g. alice" autocapitalize="none" spellcheck="false">
+    <div class="row">
+      <button id="register" class="secondary">Register security key</button>
+      <button id="login">Login with security key</button>
+    </div>
+    <div id="banner" class="banner">Plug the token's native USB port into this device, then choose an action.</div>
+    <p id="dash" class="muted" hidden>You are logged in. <a href="/dashboard">Open your dashboard →</a></p>
+  </section>
+  <section class="card">
+    <h2>What happens</h2>
+    <ol class="steps">
+      <li>The site sends a one-time random challenge.</li>
+      <li>Your browser passes it to the token together with this site's address.</li>
+      <li>The token waits for you to press its <b>BOOT</b> button, then signs with a key that never leaves the token.</li>
+      <li>The site checks the signature with the public key it stored when you registered. No password is ever used.</li>
+    </ol>
+  </section>
+  <section class="card">
+    <h2>Activity</h2>
+    <ul id="log"></ul>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# Relying party (local WebAuthn test website). Pinned for reproducibility.
+webauthn==2.7.1
+fastapi==0.141.1
+uvicorn==0.54.0
+itsdangerous==2.2.0

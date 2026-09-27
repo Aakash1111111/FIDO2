@@ -2,7 +2,7 @@
 
 Research project: *Design and Implementation of a FIDO2/U2F Compliant Authentication Token for Secure Passwordless Authentication*.
 
-**Status: Phase 1 verified on the ESP32-S3 (crypto self-tests + timings); Phase 2 (USB FIDO HID + CTAPHID) implemented and host-tested, awaiting on-device run.**
+**Status: Phase 1 verified on the ESP32-S3. Phases 2–4 (USB HID/CTAPHID, CTAP2 authenticator, local website + dashboards) implemented and tested end-to-end in software; awaiting on-device runs.**
 
 | Document | Purpose |
 |---|---|
@@ -17,12 +17,12 @@ Research project: *Design and Implementation of a FIDO2/U2F Compliant Authentica
 | Component | Proposed | Implemented | Tested | Evidence |
 |---|---|---|---|---|
 | USB HID / CTAPHID | ✔ | ✔ | host ✔ (unit + 300k-packet fuzz) / device – | – |
-| CTAP2 getInfo / makeCredential / getAssertion | ✔ | – | – | – |
+| CTAP2 getInfo / makeCredential / getAssertion | ✔ | ✔ | host ✔ (60k fuzz + E2E with py_webauthn) / device – | – |
 | Crypto (mbedTLS P-256, RFC 6979, self-tests) | ✔ | ✔ | host ✔ / device ✔ | results/phase1_run2_optimized |
-| Credential store (NVS) | ✔ | – | – | – |
+| Credential store (NVS, CRC, counter-before-sign) | ✔ | ✔ | host ✔ / device – | – |
 | User presence (button) | ✔ | ✔ (HAL) | – | – |
 | CTAP1/U2F | stretch | – | – | – |
-| Local relying party + frontend | ✔ | – | – | – |
-| Evaluation harness (T01–T12, M1–M8) | ✔ | – | – | – |
+| Local relying party + frontend + dashboards | ✔ | ✔ | E2E ✔ (sim) + headless Chromium ✔ | – |
+| Evaluation harness (T01–T12, M1–M8) | ✔ | ✔ ctaphid_check.py, e2e_check.py | sim ✔ | – |
 
 Decisions: [docs/decisions/](docs/decisions/). Firmware build/flash on Windows: [firmware/README.md](firmware/README.md).

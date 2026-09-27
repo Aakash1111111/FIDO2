@@ -9,6 +9,7 @@ project(fido_core_host_tests C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(FetchContent)
 set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
@@ -43,3 +44,20 @@ target_include_directories(test_ctaphid PRIVATE ${CORE_DIR}/include)
 target_compile_options(test_ctaphid PRIVATE -Wall -Wextra -Werror -fsanitize=address,undefined)
 target_link_options(test_ctaphid PRIVATE -fsanitize=address,undefined)
 add_test(NAME ctaphid_unit_fuzz COMMAND test_ctaphid)
+
+set(CORE_SRCS ${CORE_DIR}/fido_crypto/fido_crypto.c ${CORE_DIR}/ctaphid/ctaphid.c
+              ${CORE_DIR}/ctap2/cbor_lite.c ${CORE_DIR}/ctap2/ctap2.c ${CORE_DIR}/cred_store/cred_store.c)
+
+add_executable(test_ctap2 test_ctap2.c ${CORE_SRCS})
+target_include_directories(test_ctap2 PRIVATE ${CORE_DIR}/include)
+target_link_libraries(test_ctap2 PRIVATE mbedcrypto)
+target_compile_options(test_ctap2 PRIVATE -Wall -Wextra -Werror -fsanitize=address,undefined)
+target_link_options(test_ctap2 PRIVATE -fsanitize=address,undefined)
+add_test(NAME ctap2_unit_fuzz COMMAND test_ctap2)
+
+# Test-only software token (real fido_core code, RAM storage, simulated button)
+# used by the Python end-to-end tests in harness/tests and rp/tests.
+add_library(sim_token SHARED ${CMAKE_CURRENT_SOURCE_DIR}/../../../harness/sim/sim_token.c ${CORE_SRCS})
+target_include_directories(sim_token PRIVATE ${CORE_DIR}/include)
+target_link_libraries(sim_token PRIVATE mbedcrypto)
+target_compile_options(sim_token PRIVATE -Wall -Wextra -Werror)

@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "cred_store.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,6 +42,10 @@ bool hal_button_is_pressed(void);
  * cancelled.
  */
 esp_err_t hal_button_wait_press(uint32_t timeout_ms, bool (*poll_cb)(void *), void *cb_ctx);
+
+/* --- Credential storage backend (NVS partition "fido") ------------------- */
+
+esp_err_t hal_nvs_kv_open(cred_kv_t *out, size_t max_records);
 
 /* --- Native USB FIDO HID -------------------------------------------------- */
 

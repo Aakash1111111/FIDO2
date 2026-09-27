@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Security Keys</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script type="module" src="/static/dashboard.js"></script>
+</head>
+<body>
+<header>
+  <h1>My security keys</h1>
+  <nav><a href="/">Login page</a><a href="/dashboard">My dashboard</a></nav>
+</header>
+<main>
+  <section id="signin" class="card" hidden>
+    <h2>Not logged in</h2>
+    <p><a href="/">Log in with your security key</a> to see your registered keys.</p>
+  </section>
+  <div id="content">
+    <section class="card">
+      <h2>Account <span id="who" class="mono"></span></h2>
+      <p class="muted">Created <span id="since"></span> · <span id="ncred"></span> registered key(s)</p>
+      <div class="row">
+        <button id="add" class="secondary">Add another key</button>
+        <button id="refresh" class="secondary">Refresh</button>
+        <button id="logout" class="danger">Log out</button>
+      </div>
+      <p id="msg" class="muted"></p>
+    </section>
+    <section class="card">
+      <h2>Registered keys</h2>
+      <p class="muted">The site stores only each key's <b>public</b> key and counter. Private keys never leave the token.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Credential ID</th><th>Authenticator</th><th>Attestation</th><th>Sign count</th><th>Registered</th><th>Last used</th><th></th></tr></thead>
+        <tbody id="creds"></tbody>
+      </table></div>
+    </section>
+    <section class="card">
+      <h2>Recent activity</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Time</th><th>Action</th><th>Result</th><th>Reason</th><th>Server verify (ms)</th><th>Total in browser (ms)</th></tr></thead>
+        <tbody id="events"></tbody>
+      </table></div>
+      <p class="muted">"Total in browser" includes the time you took to press the button.</p>
+    </section>
+  </div>
+</main>
+</body>
+</html>
