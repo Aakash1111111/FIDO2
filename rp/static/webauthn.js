@@ -77,7 +77,7 @@ export function explain(err) {
   const reasons = {
     NotAllowedError: "Cancelled or timed out. Did you press the BOOT button on the token within 30 s?",
     InvalidStateError: "This token is already registered for this account.",
-    SecurityError: "Origin / RP ID mismatch. Open the site exactly at the configured address (e.g. http://localhost:8000).",
+    SecurityError: "The browser refused: this page's address does not match the site's RP ID. Open the site at http://localhost:<port> (not 127.0.0.1).",
     NotSupportedError: "This browser or device does not support the requested key type.",
     AbortError: "The operation was aborted.",
     USER_EXISTS_AUTH_REQUIRED: "That username already has a key. Log in first to add another key.",

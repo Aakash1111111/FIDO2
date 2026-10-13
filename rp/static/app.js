@@ -65,4 +65,11 @@ $("username").addEventListener("keydown", (e) => { if (e.key === "Enter") login(
 $("origin").textContent = location.origin;
 const problem = supportCheck();
 if (problem) status(problem, "error");
+// Warn early when the page is opened at an address the RP does not accept
+// (e.g. 127.0.0.1 instead of localhost, or a different port).
+fetch("/healthz").then((r) => r.json()).then((h) => {
+  if (!h.origins.includes(location.origin)) {
+    status(`Wrong address: this page is ${location.origin}, but the site is configured for ${h.origins.join(", ")} (RP ID "${h.rp_id}"). Open ${h.origins[0]} instead.`, "error");
+  }
+}).catch(() => {});
 fetch("/me", { credentials: "same-origin" }).then((r) => { if (r.ok) $("dash").hidden = false; });
