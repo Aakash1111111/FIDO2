@@ -22,6 +22,6 @@ menu "FIDO2 token"
     config FIDO_BENCH_ITERATIONS
         int "Crypto benchmark iterations at boot (0 = off)"
         depends on FIDO_METRICS
-        default 20
+        default 0
 
 endmenu

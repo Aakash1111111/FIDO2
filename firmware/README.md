@@ -1,3 +1,6 @@
+> **Firmware 0.4.0-clientpin:** [device PIN setup](../docs/PIN_SETUP.md).
+> Build from source; old prebuilt binaries do not include PIN support.
+
 # ESP32-S3 firmware (ESP-IDF v5.3.2)
 
 Any ESP-IDF v5.3.x works (tested: v5.3.2 cloud build, v5.3.6 on the implementer's PC) (record the exact version you build with; the boot log prints it).

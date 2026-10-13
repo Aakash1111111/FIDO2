@@ -18,6 +18,7 @@
 #include "fido_crypto.h"
 
 #define AUTH_FLAG_UP 0x01
+#define AUTH_FLAG_UV 0x04
 #define AUTH_FLAG_AT 0x40
 
 /* ------------------------------------------------------------------------ */
@@ -135,20 +136,24 @@ static uint8_t scan_descriptor_list(const ctap2_env_t *env, cbor_reader_t *r,
 
 static uint8_t do_get_info(const ctap2_env_t *env, cbor_writer_t *w)
 {
-    cbor_put_map(w, 4);
+    cbor_put_map(w, env->pin ? 5 : 4);
     cbor_put_uint(w, 0x01);                      /* versions */
     cbor_put_array(w, 1);
     cbor_put_text(w, "FIDO_2_0");
     cbor_put_uint(w, 0x03);                      /* aaguid */
     cbor_put_bytes(w, env->aaguid, CTAP2_AAGUID_LEN);
     cbor_put_uint(w, 0x04);                      /* options (canonical key order) */
-    cbor_put_map(w, 3);
+    cbor_put_map(w, env->pin ? 4 : 3);
     cbor_put_text(w, "rk");   cbor_put_bool(w, false);   /* no discoverable credentials */
     cbor_put_text(w, "up");   cbor_put_bool(w, true);    /* physical button */
     cbor_put_text(w, "plat"); cbor_put_bool(w, false);   /* roaming authenticator */
-    /* no "clientPin" key: PIN not supported; no "uv": no user verification */
+    if (env->pin) { cbor_put_text(w, "clientPin"); cbor_put_bool(w, env->pin->set); }
+    /* No built-in biometric UV: clientPIN provides verification. */
     cbor_put_uint(w, 0x05);                      /* maxMsgSize */
     cbor_put_uint(w, CTAP2_MAX_MSG_SIZE);
+    if (env->pin) {
+        cbor_put_uint(w, 0x06); cbor_put_array(w, 1); cbor_put_uint(w, 1);
+    }
     return CTAP2_OK;
 }
 
@@ -171,12 +176,18 @@ static uint8_t do_make_credential(const ctap2_env_t *env, const uint8_t *p, size
     bool have_exclude = false;
     options_t opt = { 0 };
     uint8_t st;
+    uint64_t pin_protocol = 0;
+    uint16_t seen = 0;
 
     cbor_reader_init(&r, p, len);
     CBOR_TRY(cbor_read_map(&r, &n));
     for (size_t i = 0; i < n; i++) {
         uint64_t key;
         CBOR_TRY(cbor_read_uint(&r, &key));
+        if (key < 16) {
+            if (seen & (1u << key)) return CTAP2_ERR_INVALID_CBOR;
+            seen |= (1u << key);
+        }
         switch (key) {
         case 0x01:
             CBOR_TRY(cbor_read_bytes(&r, &cdh, &cdh_len));
@@ -257,11 +268,16 @@ static uint8_t do_make_credential(const ctap2_env_t *env, const uint8_t *p, size
             CBOR_TRY(cbor_read_bytes(&r, &pin_auth, &pin_auth_len));
             have_pin_auth = true;
             break;
-        default:                                      /* 0x06 extensions, 0x09 pinProtocol, ... */
+        case 0x09:
+            CBOR_TRY(cbor_read_uint(&r, &pin_protocol));
+            break;
+        default:                                      /* extensions */
             CBOR_TRY(cbor_skip(&r));
             break;
         }
     }
+
+    if (r.p != r.end) return CTAP2_ERR_INVALID_CBOR;
 
     /* Required parameters */
     if (cdh == NULL || rp_id == NULL || user_id == NULL || !have_params) {
@@ -272,20 +288,20 @@ static uint8_t do_make_credential(const ctap2_env_t *env, const uint8_t *p, size
         return CTAP1_ERR_INVALID_LENGTH;
     }
 
-    /* PIN/UV auth: not supported. A zero-length pinAuth is a platform
-     * "select this authenticator by touching it" probe [SPEC-VERIFY]. */
-    if (have_pin_auth) {
-        (void)pin_auth;
-        if (pin_auth_len == 0) {
-            st = env->wait_user_presence(env->ctx);
-            return st == CTAP2_OK ? CTAP2_ERR_PIN_NOT_SET : st;
-        }
-        return CTAP2_ERR_PIN_AUTH_INVALID;
+    bool verified = false;
+    if (have_pin_auth && pin_auth_len == 0) {
+        st = env->wait_user_presence(env->ctx);
+        return st ? st : env->pin && env->pin->set ? CTAP2_ERR_PIN_INVALID : CTAP2_ERR_PIN_NOT_SET;
     }
+    if (env->pin) {
+        st = client_pin_authorize(env->pin, cdh, pin_auth, pin_auth_len, pin_protocol, now_us(env));
+        if (st) return st;
+        verified = true;
+    } else if (have_pin_auth) return CTAP2_ERR_PIN_AUTH_INVALID;
     if (!es256) {
         return CTAP2_ERR_UNSUPPORTED_ALGORITHM;
     }
-    if ((opt.rk_present && opt.rk) || (opt.uv_present && opt.uv)) {
+    if ((opt.rk_present && opt.rk) || (opt.uv_present && opt.uv && !verified)) {
         return CTAP2_ERR_UNSUPPORTED_OPTION;
     }
     if (opt.up_present && !opt.up) {
@@ -324,6 +340,13 @@ static uint8_t do_make_credential(const ctap2_env_t *env, const uint8_t *p, size
         return st;
     }
 
+    if (verified) {
+        st = client_pin_authorize(env->pin, cdh, pin_auth, pin_auth_len, pin_protocol, now_us(env));
+        if (st) return st;
+    }
+
+    if (env->session_valid && !env->session_valid(env->ctx)) return CTAP2_ERR_KEEPALIVE_CANCEL;
+
     /* Key generation and storage */
     cred_record_t rec;
     uint8_t pub[FC_P256_PUB_LEN];
@@ -360,7 +383,7 @@ static uint8_t do_make_credential(const ctap2_env_t *env, const uint8_t *p, size
     uint8_t auth_data[32 + 1 + 4 + 16 + 2 + CRED_ID_LEN + FC_COSE_ES256_LEN];
     size_t ad = 0, cose_len = 0;
     memcpy(auth_data + ad, rp_id_hash, 32);                 ad += 32;
-    auth_data[ad++] = AUTH_FLAG_UP | AUTH_FLAG_AT;
+    auth_data[ad++] = AUTH_FLAG_UP | AUTH_FLAG_AT | (verified ? AUTH_FLAG_UV : 0);
     put_be32(auth_data + ad, rec.sign_count);               ad += 4;
     memcpy(auth_data + ad, env->aaguid, CTAP2_AAGUID_LEN);  ad += CTAP2_AAGUID_LEN;
     auth_data[ad++] = 0;
@@ -395,6 +418,7 @@ static uint8_t do_make_credential(const ctap2_env_t *env, const uint8_t *p, size
     cbor_put_text(w, "sig");
     cbor_put_bytes(w, sig, sig_len);
 
+    if (verified) client_pin_invalidate(env->pin);
     metric(env, "mc_total_excl_up_us", now_us(env) - t_start - t_up);
     return CTAP2_OK;
 }
@@ -415,12 +439,18 @@ static uint8_t do_get_assertion(const ctap2_env_t *env, const uint8_t *p, size_t
     bool have_allow = false, have_pin_auth = false;
     options_t opt = { 0 };
     uint8_t st;
+    uint64_t pin_protocol = 0;
+    uint16_t seen = 0;
 
     cbor_reader_init(&r, p, len);
     CBOR_TRY(cbor_read_map(&r, &n));
     for (size_t i = 0; i < n; i++) {
         uint64_t key;
         CBOR_TRY(cbor_read_uint(&r, &key));
+        if (key < 16) {
+            if (seen & (1u << key)) return CTAP2_ERR_INVALID_CBOR;
+            seen |= (1u << key);
+        }
         switch (key) {
         case 0x01:
             CBOR_TRY(cbor_read_text(&r, &rp_id, &rp_id_len));
@@ -443,27 +473,35 @@ static uint8_t do_get_assertion(const ctap2_env_t *env, const uint8_t *p, size_t
             CBOR_TRY(cbor_read_bytes(&r, &pin_auth, &pin_auth_len));
             have_pin_auth = true;
             break;
-        default:                                      /* 0x04 extensions, 0x07 pinProtocol */
+        case 0x07:
+            CBOR_TRY(cbor_read_uint(&r, &pin_protocol));
+            break;
+        default:                                      /* extensions */
             CBOR_TRY(cbor_skip(&r));
             break;
         }
     }
 
+    if (r.p != r.end) return CTAP2_ERR_INVALID_CBOR;
     if (rp_id == NULL || cdh == NULL) {
         return CTAP2_ERR_MISSING_PARAMETER;
     }
     if (cdh_len != FC_SHA256_LEN || rp_id_len == 0) {
         return CTAP1_ERR_INVALID_LENGTH;
     }
-    if (have_pin_auth) {
-        (void)pin_auth;
-        if (pin_auth_len == 0) {
-            st = env->wait_user_presence(env->ctx);
-            return st == CTAP2_OK ? CTAP2_ERR_PIN_NOT_SET : st;
-        }
-        return CTAP2_ERR_PIN_AUTH_INVALID;
+    bool verified = false;
+    if (have_pin_auth && pin_auth_len == 0) {
+        st = env->wait_user_presence(env->ctx);
+        return st ? st : env->pin && env->pin->set ? CTAP2_ERR_PIN_INVALID : CTAP2_ERR_PIN_NOT_SET;
     }
-    if ((opt.uv_present && opt.uv) || opt.rk_present) {
+    if (env->pin) {
+        st = client_pin_authorize(env->pin, cdh, pin_auth, pin_auth_len, pin_protocol, now_us(env));
+        if (st) return st;
+        verified = true;
+        /* A PIN-authorized up=false probe may select a credential, but its
+         * signature has UP=0 and cannot be accepted as a login by this RP. */
+    } else if (have_pin_auth) return CTAP2_ERR_PIN_AUTH_INVALID;
+    if ((opt.uv_present && opt.uv && !verified) || opt.rk_present) {
         return CTAP2_ERR_UNSUPPORTED_OPTION;
     }
     const bool require_up = !opt.up_present || opt.up;   /* default: up = true */
@@ -492,7 +530,7 @@ static uint8_t do_get_assertion(const ctap2_env_t *env, const uint8_t *p, size_t
     }
     metric(env, "ga_parse_us", t_mark - t_start);
 
-    uint8_t flags = 0;
+    uint8_t flags = verified ? AUTH_FLAG_UV : 0;
     if (require_up) {
         t_mark = now_us(env);
         st = env->wait_user_presence(env->ctx);
@@ -506,6 +544,15 @@ static uint8_t do_get_assertion(const ctap2_env_t *env, const uint8_t *p, size_t
     }
     /* up = false: browsers use this to silently check which credential
      * exists. UP flag stays 0, so relying parties reject it as a login. */
+
+    if (verified) {
+        st = client_pin_authorize(env->pin, cdh, pin_auth, pin_auth_len, pin_protocol, now_us(env));
+        if (st) { fc_zeroize(&rec, sizeof(rec)); return st; }
+    }
+
+    if (env->session_valid && !env->session_valid(env->ctx)) {
+        fc_zeroize(&rec, sizeof(rec)); return CTAP2_ERR_KEEPALIVE_CANCEL;
+    }
 
     /* Counter first, durably; only then sign. */
     t_mark = now_us(env);
@@ -545,6 +592,7 @@ static uint8_t do_get_assertion(const ctap2_env_t *env, const uint8_t *p, size_t
     cbor_put_uint(w, 0x03);
     cbor_put_bytes(w, sig, sig_len);
 
+    if (verified && require_up) client_pin_invalidate(env->pin);
     metric(env, "ga_total_excl_up_us", now_us(env) - t_start - t_up);
     return CTAP2_OK;
 }
@@ -564,6 +612,9 @@ size_t ctap2_handle(const ctap2_env_t *env, const uint8_t *req, size_t req_len,
         resp[0] = CTAP1_ERR_INVALID_LENGTH;
         return 1;
     }
+    if (env->pin && (env->pin->fault || !env->pin->ready)) {
+        resp[0] = CTAP1_ERR_OTHER; return 1;
+    }
     cbor_writer_init(&w, resp + 1, resp_cap - 1);
     const uint8_t *params = req + 1;
     const size_t params_len = req_len - 1;
@@ -578,11 +629,35 @@ size_t ctap2_handle(const ctap2_env_t *env, const uint8_t *req, size_t req_len,
     case CTAP2_CMD_GET_ASSERTION:
         st = do_get_assertion(env, params, params_len, &w);
         break;
-    default:   /* clientPIN, reset, getNextAssertion, vendor, ... */
+    case CTAP2_CMD_CLIENT_PIN:
+        st = env->pin ? client_pin_handle(env->pin, params, params_len, &w, now_us(env))
+                      : CTAP1_ERR_INVALID_COMMAND;
+        break;
+    case CTAP2_CMD_RESET:
+        if (params_len) { st = CTAP1_ERR_INVALID_LENGTH; break; }
+        if (!env->pin || !env->reset_storage || !env->now_us) { st = CTAP1_ERR_INVALID_COMMAND; break; }
+        /* Reset permitted only in the first 10 seconds after boot, with a fresh press. */
+        if (now_us(env) - env->boot_us > 10000000 || now_us(env) < env->boot_us) {
+            st = CTAP2_ERR_NOT_ALLOWED; break;
+        }
+        st = env->wait_user_presence(env->ctx);
+        if (st) break;
+        if (now_us(env) - env->boot_us > 10000000) { st = CTAP2_ERR_NOT_ALLOWED; break; }
+        if (env->session_valid && !env->session_valid(env->ctx)) { st = CTAP2_ERR_KEEPALIVE_CANCEL; break; }
+        client_pin_invalidate(env->pin);
+        if (env->reset_storage(env->ctx) || client_pin_init(env->pin, &env->store->kv)) {
+            env->pin->fault = true; st = CTAP1_ERR_OTHER;
+        }
+        break;
+    default:   /* getNextAssertion, vendor, ... */
         st = CTAP1_ERR_INVALID_COMMAND;
         break;
     }
 
+    if (env->session_valid && !env->session_valid(env->ctx)) {
+        if (env->pin) client_pin_invalidate(env->pin);
+        st = CTAP2_ERR_KEEPALIVE_CANCEL;
+    }
     if (st == CTAP2_OK && w.overflow) {
         st = CTAP1_ERR_OTHER;
     }

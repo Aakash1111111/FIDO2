@@ -12,6 +12,8 @@
 
 #include <string.h>
 
+#include "mbedtls/aes.h"
+#include "mbedtls/ecdh.h"
 #include "mbedtls/asn1.h"
 #include "mbedtls/asn1write.h"
 #include "mbedtls/bignum.h"
@@ -555,4 +557,60 @@ const char *fc_status_str(fc_status_t st)
     case FC_ERR_SELFTEST:    return "ERR_SELFTEST";
     }
     return "ERR_UNKNOWN";
+}
+
+/* CTAP PIN protocol primitives; all cryptographic operations use mbedTLS. */
+bool fc_equal(const uint8_t *a, const uint8_t *b, size_t len)
+{
+    volatile uint8_t diff = 0;
+    for (size_t i = 0; i < len; i++) diff |= a[i] ^ b[i];
+    return diff == 0;
+}
+
+fc_status_t fc_hmac_sha256(const uint8_t key[32], const uint8_t *msg, size_t len, uint8_t out[32])
+{
+    const mbedtls_md_info_t *md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (!key || !out || (!msg && len) || !md) return FC_ERR_ARG;
+    int rc = mbedtls_md_hmac(md, key, 32, msg, len, out);
+    if (rc) fc_zeroize(out, 32);
+    return rc == 0 ? FC_OK : FC_ERR_SIGN;
+}
+
+fc_status_t fc_pin_aes(const uint8_t key[32], bool encrypt, const uint8_t *in, size_t len, uint8_t *out)
+{
+    if (!key || !in || !out || !len || len % 16) return FC_ERR_ARG;
+    mbedtls_aes_context aes;
+    uint8_t iv[16] = {0};
+    mbedtls_aes_init(&aes);
+    int rc = encrypt ? mbedtls_aes_setkey_enc(&aes, key, 256) : mbedtls_aes_setkey_dec(&aes, key, 256);
+    if (!rc) rc = mbedtls_aes_crypt_cbc(&aes, encrypt ? MBEDTLS_AES_ENCRYPT : MBEDTLS_AES_DECRYPT,
+                                      len, iv, in, out);
+    mbedtls_aes_free(&aes);
+    fc_zeroize(iv, sizeof(iv));
+    if (rc) fc_zeroize(out, len);
+    return rc == 0 ? FC_OK : FC_ERR_INVALID_KEY;
+}
+
+fc_status_t fc_pin_shared_secret(const uint8_t priv[32], const uint8_t peer[65], uint8_t out[32])
+{
+    if (!priv || !peer || !out) return FC_ERR_ARG;
+    mbedtls_ecp_group grp;
+    mbedtls_ecp_point q;
+    mbedtls_mpi d, z;
+    uint8_t x[32] = {0};
+    mbedtls_ecp_group_init(&grp); mbedtls_ecp_point_init(&q);
+    mbedtls_mpi_init(&d); mbedtls_mpi_init(&z);
+    int rc = mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP256R1);
+    if (!rc) rc = mbedtls_mpi_read_binary(&d, priv, 32);
+    if (!rc) rc = mbedtls_ecp_check_privkey(&grp, &d);
+    if (!rc) rc = mbedtls_ecp_point_read_binary(&grp, &q, peer, 65);
+    if (!rc) rc = mbedtls_ecp_check_pubkey(&grp, &q);
+    if (!rc) rc = mbedtls_ecdh_compute_shared(&grp, &z, &q, &d, drbg_cb, NULL);
+    if (!rc) rc = mbedtls_mpi_write_binary(&z, x, 32);
+    fc_status_t st = rc ? FC_ERR_INVALID_KEY : fc_sha256(x, 32, out);
+    fc_zeroize(x, sizeof(x));
+    if (st != FC_OK) fc_zeroize(out, 32);
+    mbedtls_mpi_free(&d); mbedtls_mpi_free(&z);
+    mbedtls_ecp_point_free(&q); mbedtls_ecp_group_free(&grp);
+    return st;
 }

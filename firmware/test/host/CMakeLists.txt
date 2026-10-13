@@ -46,7 +46,7 @@ target_link_options(test_ctaphid PRIVATE -fsanitize=address,undefined)
 add_test(NAME ctaphid_unit_fuzz COMMAND test_ctaphid)
 
 set(CORE_SRCS ${CORE_DIR}/fido_crypto/fido_crypto.c ${CORE_DIR}/ctaphid/ctaphid.c
-              ${CORE_DIR}/ctap2/cbor_lite.c ${CORE_DIR}/ctap2/ctap2.c ${CORE_DIR}/cred_store/cred_store.c)
+              ${CORE_DIR}/ctap2/cbor_lite.c ${CORE_DIR}/ctap2/ctap2.c ${CORE_DIR}/ctap2/client_pin.c ${CORE_DIR}/cred_store/cred_store.c)
 
 add_executable(test_ctap2 test_ctap2.c ${CORE_SRCS})
 target_include_directories(test_ctap2 PRIVATE ${CORE_DIR}/include)

@@ -3,42 +3,54 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FIDO2 Token Login</title>
+  <title>ESP32-S3 · Security key</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/styles.css">
   <script type="module" src="/static/app.js"></script>
 </head>
-<body>
-<header>
-  <h1>Passwordless login with the ESP32-S3 security key</h1>
-  <p>Research test site (relying party) at <span id="origin" class="mono"></span></p>
-  <nav><a href="/">Login</a><a href="/dashboard">My dashboard</a></nav>
+<body class="login-page">
+<header class="site-header">
+  <a class="brand" href="/">ESP32-S3 <span>Security key research</span></a>
+  <nav aria-label="Main navigation"><a href="/" aria-current="page">Sign in</a><a href="/dashboard">My dashboard</a></nav>
 </header>
 <main>
-  <section class="card">
-    <h2>Account</h2>
-    <label for="username">Username</label>
-    <input id="username" type="text" autocomplete="username webauthn" placeholder="e.g. alice" autocapitalize="none" spellcheck="false">
-    <div class="row">
-      <button id="register" class="secondary">Register security key</button>
-      <button id="login">Login with security key</button>
-    </div>
-    <div id="banner" class="banner">Plug the token's native USB port into this device, then choose an action.</div>
-    <p id="dash" class="muted" hidden>You are logged in. <a href="/dashboard">Open your dashboard →</a></p>
+  <div class="intro">
+    <p class="eyebrow">FIDO2 / WebAuthn test site</p>
+    <h1>Your key. Your account.</h1>
+    <p>Register your ESP32-S3 security key or use it to sign in. Keep the key connected until the browser finishes.</p>
+  </div>
+  <div class="auth-layout">
+    <section class="auth-panel" aria-labelledby="account-title">
+      <h2 id="account-title">Sign in with your security key</h2>
+      <p class="muted">Use the username you registered on this site.</p>
+      <form id="account-form">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" required autocomplete="username" placeholder="Enter your username" autocapitalize="none" spellcheck="false" aria-describedby="username-help">
+        <p id="username-help" class="field-help">First time here? Enter a username, then register your key.</p>
+        <div class="row">
+          <button id="login" type="submit">Sign in with security key</button>
+          <button id="register" type="button" class="secondary">Register a new key</button>
+        </div>
+      </form>
+      <div id="banner" class="banner" role="status" aria-live="polite" aria-atomic="true">Connect your key to get started.</div>
+      <p id="dash" class="muted" hidden>You are signed in. <a href="/dashboard">Open your dashboard →</a></p>
+    </section>
+    <aside class="key-guide" aria-labelledby="guide-title">
+      <h2 id="guide-title">Before you begin</h2>
+      <ol class="connection-steps">
+        <li><strong>Connect the key</strong><span>Use the board’s native USB port and a data cable. On a phone, enable OTG if needed.</span></li>
+        <li><strong>Choose your security key</strong><span>Select the external USB security key, then enter its PIN in the browser’s security dialog.</span></li>
+        <li><strong>Press BOOT when prompted</strong><span>After entering the PIN, press BOOT to confirm you are present. Wait for the result here.</span></li>
+      </ol>
+      <p class="privacy-note">Your private key stays on the board. This site verifies a signed challenge using your public key.</p>
+    </aside>
+  </div>
+  <section class="activity-section" aria-labelledby="activity-title">
+    <h2 id="activity-title">Activity</h2>
+    <p id="log-empty" class="muted">Registration and sign-in updates will appear here.</p>
+    <ul id="log" aria-label="Registration and sign-in history"></ul>
   </section>
-  <section class="card">
-    <h2>What happens</h2>
-    <ol class="steps">
-      <li>The site sends a one-time random challenge.</li>
-      <li>Your browser passes it to the token together with this site's address.</li>
-      <li>The token waits for you to press its <b>BOOT</b> button, then signs with a key that never leaves the token.</li>
-      <li>The site checks the signature with the public key it stored when you registered. No password is ever used.</li>
-    </ol>
-  </section>
-  <section class="card">
-    <h2>Activity</h2>
-    <ul id="log"></ul>
-  </section>
+  <footer class="site-footer">Research test environment <span id="origin" class="mono"></span></footer>
 </main>
 </body>
 </html>

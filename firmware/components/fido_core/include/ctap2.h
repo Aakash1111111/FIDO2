@@ -4,7 +4,7 @@
  * Implemented subset (claim only this in the paper):
  *   authenticatorGetInfo (0x04), authenticatorMakeCredential (0x01),
  *   authenticatorGetAssertion (0x02). ES256 only. Non-discoverable
- *   credentials only (rk = false). No clientPIN / user verification.
+ *   credentials only (rk = false). clientPIN protocol 1 on production device.
  *   Attestation: "packed" self-attestation (no vendor certificate).
  *
  * Standard behaviour references are to FIDO CTAP 2.0 §5 [SPEC-VERIFY].
@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "cred_store.h"
+#include "client_pin.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -45,6 +46,14 @@ extern "C" {
 #define CTAP2_ERR_KEEPALIVE_CANCEL        0x2D
 #define CTAP2_ERR_NO_CREDENTIALS          0x2E
 #define CTAP2_ERR_USER_ACTION_TIMEOUT     0x2F
+#define CTAP2_ERR_PIN_INVALID             0x31
+#define CTAP2_ERR_PIN_BLOCKED             0x32
+#define CTAP2_ERR_PIN_AUTH_BLOCKED        0x34
+#define CTAP2_ERR_PIN_REQUIRED            0x36
+#define CTAP2_ERR_PIN_POLICY_VIOLATION    0x37
+#define CTAP2_ERR_PIN_TOKEN_EXPIRED       0x38
+#define CTAP2_ERR_NOT_ALLOWED             0x30
+#define CTAP2_ERR_INVALID_SUBCOMMAND      0x3E
 #define CTAP2_ERR_PIN_AUTH_INVALID        0x33
 #define CTAP2_ERR_PIN_NOT_SET             0x35
 #define CTAP1_ERR_OTHER                   0x7F
@@ -67,6 +76,10 @@ typedef struct {
     void *ctx;
     const uint8_t *aaguid;            /* CTAP2_AAGUID_LEN bytes */
     cred_store_t *store;
+    client_pin_t *pin; /* NULL only for legacy baseline host tests */
+    int (*reset_storage)(void *ctx); /* erase all PIN and credential records */
+    int64_t boot_us;
+    bool (*session_valid)(void *ctx); /* optional transport epoch check */
 } ctap2_env_t;
 
 /*

@@ -6,6 +6,7 @@
 #include "hal_esp32s3.h"
 
 #include "nvs.h"
+#include <stdio.h>
 
 #define FIDO_PARTITION "fido"
 #define FIDO_NAMESPACE "creds"
@@ -66,4 +67,35 @@ esp_err_t hal_nvs_kv_open(cred_kv_t *out, size_t max_records)
     }
     *out = (cred_kv_t){ kv_get, kv_set, kv_foreach, NULL, max_records };
     return ESP_OK;
+}
+
+/* A marker makes interrupted reset fail closed. Credential deletion is
+ * committed before deleting PIN state; the marker is deleted last. */
+esp_err_t hal_nvs_kv_erase_all(void)
+{
+    const uint8_t marker = 1;
+    esp_err_t err = nvs_set_blob(s_nvs, "reset_pending", &marker, 1);
+    if (err != ESP_OK || (err = nvs_commit(s_nvs)) != ESP_OK) return err;
+    for (;;) {
+        nvs_iterator_t it = NULL;
+        err = nvs_entry_find(FIDO_PARTITION, FIDO_NAMESPACE, NVS_TYPE_BLOB, &it);
+        char key[16] = {0};
+        while (err == ESP_OK) {
+            nvs_entry_info_t info;
+            nvs_entry_info(it, &info);
+            if (info.key[0] == 'c') { snprintf(key, sizeof(key), "%s", info.key); break; }
+            err = nvs_entry_next(&it);
+        }
+        nvs_release_iterator(it);
+        if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) return err;
+        if (!key[0]) break;
+        err = nvs_erase_key(s_nvs, key);
+        if (err != ESP_OK || (err = nvs_commit(s_nvs)) != ESP_OK) return err;
+    }
+    err = nvs_erase_key(s_nvs, "pin_state");
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) return err;
+    err = nvs_commit(s_nvs);
+    if (err != ESP_OK) return err;
+    err = nvs_erase_key(s_nvs, "reset_pending");
+    return err == ESP_OK ? nvs_commit(s_nvs) : err;
 }

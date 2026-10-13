@@ -39,3 +39,10 @@ CONFIG_MBEDTLS_ECP_FIXED_POINT_OPTIM=y
 
 # USB: TinyUSB device stack on the native USB port, one HID interface (FIDO).
 CONFIG_TINYUSB_HID_COUNT=1
+
+# clientPIN protocol 1 key agreement and transport encryption
+CONFIG_MBEDTLS_ECDH_C=y
+CONFIG_MBEDTLS_AES_C=y
+
+# Keep the reset window and PIN setup available promptly after boot.
+CONFIG_FIDO_BENCH_ITERATIONS=0

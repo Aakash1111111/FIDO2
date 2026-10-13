@@ -15,3 +15,7 @@ __pycache__/
 *.db
 firmware/build-host/
 .venv/
+
+# Local PIN build configuration (generated from sdkconfig.defaults)
+firmware/sdkconfig.pin
+firmware/sdkconfig.pin.old

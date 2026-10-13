@@ -1,12 +1,8 @@
 :root {
-  --bg: #f6f7f9; --card: #ffffff; --text: #16181d; --muted: #5b6270; --border: #dde1e7;
-  --accent: #2456d3; --accent-text: #ffffff; --ok: #177245; --ok-bg: #e6f4ec; --err: #b3261e;
-  --err-bg: #fbe9e8; --act: #8a5a00; --act-bg: #fff3dc;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #111317; --card: #1a1d23; --text: #e7e9ee; --muted: #a0a7b4; --border: #2c313a;
-          --accent: #7aa2ff; --accent-text: #0d1020; --ok: #6fd39c; --ok-bg: #16281f; --err: #ff8a80;
-          --err-bg: #2e1715; --act: #ffcc66; --act-bg: #2c2410; }
+  color-scheme: dark;
+  --bg: #12101e; --card: #1c182b; --text: #f4f1fa; --muted: #bbb3cf; --border: #413750;
+  --accent: #c3a6ff; --accent-text: #211334; --ok: #a8ddc2; --ok-bg: #1d352d;
+  --err: #ffb6bf; --err-bg: #3d232d; --act: #edcd94; --act-bg: #352b24;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text);
@@ -16,7 +12,7 @@ header h1 { margin: 0; font-size: 1.4rem; }
 header p { margin: 4px 0 0; color: var(--muted); }
 nav a { color: var(--accent); margin-right: 16px; text-decoration: none; font-weight: 600; }
 main { max-width: 960px; margin: 0 auto; padding: 8px 16px 48px; }
-.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin: 16px 0; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin: 16px 0; }
 .card h2 { margin: 0 0 12px; font-size: 1.1rem; }
 label { display: block; font-weight: 600; margin-bottom: 6px; }
 input[type=text], input[type=password] { width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px;
@@ -52,3 +48,57 @@ td.ok { color: var(--ok); font-weight: 600; } td.error { color: var(--err); font
 .toolbar { display: flex; gap: 12px; flex-wrap: wrap; justify-content: space-between; align-items: center; }
 label.inline { display: flex; gap: 8px; align-items: center; margin: 0; font-weight: 400; }
 .spaced { margin-top: 14px; }
+
+/* Shared controls and the authentication page. No external assets required. */
+a { color: var(--accent); text-underline-offset: 3px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+input:focus-visible { outline-offset: 2px; }
+button:not(:disabled):hover { filter: brightness(.94); }
+[hidden] { display: none !important; }
+.site-header { max-width: 1120px; padding: 24px 24px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--border); }
+.brand { color: var(--text); text-decoration: none; font-weight: 750; letter-spacing: -.02em; }
+.brand span { display: block; font-size: .78rem; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.site-header nav { display: flex; gap: 24px; }
+.site-header nav a { margin: 0; font-size: .9rem; }
+.site-header nav a[aria-current] { color: var(--text); text-decoration: underline; }
+.login-page main { max-width: 1120px; padding: 48px 24px 24px; }
+.intro { max-width: 640px; margin-bottom: 36px; }
+.eyebrow { font-size: .78rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; }
+.intro h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.15; letter-spacing: -.04em; margin: 0 0 16px; }
+.intro > p:last-child { color: var(--muted); margin: 0; font-size: 1.05rem; }
+.auth-layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 48px; align-items: start; }
+.auth-panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 28px; }
+.auth-panel h2, .key-guide h2, .activity-section h2 { font-size: 1.15rem; line-height: 1.4; margin: 0 0 8px; }
+.auth-panel > .muted { margin: 0 0 24px; }
+.field-help { font-size: .83rem; color: var(--muted); margin: 8px 0 20px; }
+.auth-panel .row { flex-direction: column; gap: 10px; margin: 0; }
+.auth-panel .row button { flex: none; width: 100%; }
+.banner { border-left: 3px solid var(--border); border-radius: 3px; font-size: .9rem; overflow-wrap: anywhere; margin-top: 24px; }
+.banner.ok { border-color: var(--ok); }
+.banner.error { border-color: var(--err); }
+.banner.action { border-color: var(--act); }
+.key-guide { padding-top: 24px; }
+.connection-steps { padding-left: 22px; margin: 24px 0; }
+.connection-steps li { padding-left: 8px; margin-bottom: 22px; }
+.connection-steps li::marker { color: var(--muted); }
+.connection-steps strong { display: block; font-size: .95rem; }
+.connection-steps span { display: block; color: var(--muted); font-size: .9rem; margin-top: 4px; }
+.privacy-note { padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: .85rem; }
+.activity-section { margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--border); }
+#log li { padding: 10px 0; overflow-wrap: anywhere; }
+.site-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--border); margin-top: 32px; padding-top: 16px; font-size: .75rem; color: var(--muted); }
+.site-footer .mono { overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .site-header { padding: 18px 20px; align-items: flex-start; }
+  .site-header nav { gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+  .login-page main { padding: 32px 20px 24px; }
+  .intro { margin-bottom: 28px; }
+  .auth-layout { grid-template-columns: 1fr; gap: 8px; }
+  .auth-panel { padding: 22px; }
+  .key-guide { padding-top: 24px; }
+}
+
+/* Reference palette: restrained violet accents on a deep navy canvas. */
+.login-page .intro h1 { color: #eee5ff; }
+.login-page #login { background: #a98aeb; border-color: #a98aeb; color: #181022; }
+.login-page .auth-panel { background: #1c182b; }

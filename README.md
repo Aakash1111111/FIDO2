@@ -1,3 +1,7 @@
+> **Device PIN update:** see [PIN setup and flashing](docs/PIN_SETUP.md).
+> Firmware 0.4.0 adds device-wide CTAP2 PIN verification. Historical status
+> tables below describe the earlier no-PIN build; they are not PIN test results.
+
 # FIDO2/U2F Authentication Token on ESP32-S3
 
 Research project: *Design and Implementation of a FIDO2/U2F Compliant Authentication Token for Secure Passwordless Authentication*.

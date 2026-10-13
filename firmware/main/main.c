@@ -35,9 +35,9 @@
 #include "hal_esp32s3.h"
 
 #define FIDO_NVS_PARTITION "fido"
-#define FW_VERSION         "0.3.0-phase3"
+#define FW_VERSION         "0.4.0-clientpin"
 #define FW_VERSION_MAJOR   0
-#define FW_VERSION_MINOR   3
+#define FW_VERSION_MINOR   4
 #define FW_VERSION_BUILD   0
 #define RX_QUEUE_LEN       16
 #define MAX_CREDENTIALS    128
@@ -50,6 +50,8 @@ static const uint8_t AAGUID[CTAP2_AAGUID_LEN] = {
 };
 
 static cred_store_t s_store;
+static client_pin_t s_pin;
+static int64_t s_boot_us;
 
 static const char *TAG = "fido";
 
@@ -293,9 +295,27 @@ static void env_metric(void *ctx, const char *name, int64_t value)
 #endif
 }
 
+static int reset_storage(void *ctx)
+{
+    (void)ctx;
+    return hal_nvs_kv_erase_all() == ESP_OK ? 0 : -1;
+}
+
+static uint32_t s_pin_epoch, s_request_epoch;
+static bool session_valid(void *ctx)
+{
+    (void)ctx;
+    return hal_usb_hid_mounted() && hal_usb_session_epoch() == s_request_epoch;
+}
+
 static void handle_cbor(ctaphid_t *h)
 {
     static uint8_t resp[CTAPHID_MAX_MSG_SIZE];
+    s_request_epoch = hal_usb_session_epoch();
+    if (s_pin_epoch != s_request_epoch) {
+        if (client_pin_disconnect(&s_pin)) halt("PIN_SESSION");
+        s_pin_epoch = s_request_epoch;
+    }
     const ctap2_env_t env = {
         .wait_user_presence = wait_user_presence,
         .now_us = env_now_us,
@@ -303,6 +323,10 @@ static void handle_cbor(ctaphid_t *h)
         .ctx = NULL,
         .aaguid = AAGUID,
         .store = &s_store,
+        .pin = &s_pin,
+        .reset_storage = reset_storage,
+        .boot_us = s_boot_us,
+        .session_valid = session_valid,
     };
     s_req_seq++;
     const uint8_t cmd = h->msg[0];
@@ -348,6 +372,7 @@ static void fido_task(void *arg)
 
         const bool m = hal_usb_hid_mounted();
         if (m != mounted) {
+            if (!m && client_pin_disconnect(&s_pin)) halt("PIN_DISCONNECT");
             mounted = m;
             printf("EVT,USB,%s,rx_dropped=%" PRIu32 "\n", m ? "MOUNTED" : "UNMOUNTED", s_rx_dropped);
         }
@@ -379,11 +404,14 @@ static void usb_start(void)
 
 void app_main(void)
 {
+    s_boot_us = esp_timer_get_time();
     log_environment();
 
     hal_rng_init();
     storage_init();
     crypto_init();
+    if (client_pin_init(&s_pin, &s_store.kv)) halt("PIN_INIT");
+    printf("EVT,PIN,configured=%u,retries=%u\n", (unsigned)s_pin.set, (unsigned)s_pin.retries);
 
 #if CONFIG_FIDO_METRICS && CONFIG_FIDO_BENCH_ITERATIONS > 0
     crypto_benchmark();

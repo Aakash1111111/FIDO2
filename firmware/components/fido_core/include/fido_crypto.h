@@ -23,6 +23,7 @@
 #ifndef FIDO_CRYPTO_H
 #define FIDO_CRYPTO_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -124,6 +125,13 @@ fc_status_t fc_es256_verify(const uint8_t pub[FC_P256_PUB_LEN],
  */
 fc_status_t fc_cose_es256_pubkey(const uint8_t pub[FC_P256_PUB_LEN],
                                  uint8_t *out, size_t out_cap, size_t *out_len);
+
+/* CTAP PIN protocol 1: SHA256(ECDH.x), HMAC-SHA256, AES-256-CBC (zero IV).
+ * CBC is only for the protocol's fixed, block-aligned buffers, not general encryption. */
+fc_status_t fc_pin_shared_secret(const uint8_t priv[32], const uint8_t peer[65], uint8_t out[32]);
+fc_status_t fc_hmac_sha256(const uint8_t key[32], const uint8_t *msg, size_t len, uint8_t out[32]);
+fc_status_t fc_pin_aes(const uint8_t key[32], bool encrypt, const uint8_t *in, size_t len, uint8_t *out);
+bool fc_equal(const uint8_t *a, const uint8_t *b, size_t len);
 
 /* Wipe a secret buffer in a way the compiler cannot optimize away. */
 void fc_zeroize(void *buf, size_t len);

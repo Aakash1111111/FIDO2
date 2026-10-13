@@ -44,6 +44,10 @@ class Prompt(UserInteraction):
     def __init__(self, say):
         self.say = say
 
+    def request_pin(self, permissions, rp_id):
+        from getpass import getpass
+        return getpass("Security key PIN: ")
+
     def prompt_up(self):
         self.say("    >>> press the BOOT button on the token <<<")
 
@@ -89,6 +93,10 @@ class Runner:
         self.db_path = db_path or os.path.join(tempfile.mkdtemp(), "rp.sqlite3")
         settings = load_settings({"RP_ID": RP_ID, "RP_ORIGIN": ORIGIN, "DB_PATH": self.db_path,
                                   "RP_ADMIN_TOKEN": "research-admin-token-0001", "RP_EXPERIMENT_MODE": "1"})
+        # Keep old baseline simulators runnable; PIN-capable devices require UV.
+        from dataclasses import replace
+        if "clientPin" not in Ctap2(device).info.options:
+            settings = replace(settings, user_verification="discouraged")
         self.app = create_app(settings)
         self.results = []
         self.timings = []   # (ceremony, trial, host_ms incl. button, server_verify_ms)

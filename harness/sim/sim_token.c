@@ -24,6 +24,8 @@ static int q_head, q_tail;
 static ctaphid_t h;
 static int up_mode;            /* 0 = press, 1 = timeout, 2 = host cancel */
 static int up_count;
+static int64_t clock_offset;
+static int fail_writes;
 
 /* ---- RAM key-value backend ---- */
 #define KV_MAX 64
@@ -51,7 +53,7 @@ static int kv_set(void *c, const char *key, const uint8_t *buf, size_t len)
         if (kv[i].used && strcmp(kv[i].key, key) == 0) { free_slot = i; break; }
         if (!kv[i].used && free_slot < 0) free_slot = i;
     }
-    if (free_slot < 0 || len > sizeof(kv[0].val)) return -1;
+    if (fail_writes || free_slot < 0 || len > sizeof(kv[0].val)) return -1;
     snprintf(kv[free_slot].key, sizeof(kv[0].key), "%s", key);
     memcpy(kv[free_slot].val, buf, len);
     kv[free_slot].len = len;
@@ -97,7 +99,7 @@ static int64_t now_us(void *c)
     (void)c;
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (int64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+    return (int64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000 + clock_offset;
 }
 
 static uint8_t wait_up(void *c)
@@ -111,6 +113,10 @@ static uint8_t wait_up(void *c)
 }
 
 static ctap2_env_t env;
+static client_pin_t pin;
+
+static int reset_kv(void *ctx) { (void)ctx; memset(kv, 0, sizeof(kv)); return 0; }
+
 
 int sim_init(void)
 {
@@ -120,13 +126,30 @@ int sim_init(void)
     memset(kv, 0, sizeof(kv));
     const cred_kv_t k = { kv_get, kv_set, kv_foreach, NULL, 32 };
     cred_store_init(&store, &k);
-    env = (ctap2_env_t){ wait_up, now_us, NULL, NULL, aaguid, &store };
+    env = (ctap2_env_t){ wait_up, now_us, NULL, NULL, aaguid, &store, NULL, NULL, 0, NULL };
+    clock_offset = 0; fail_writes = 0;
     up_mode = 0;
     up_count = 0;
     if (fc_crypto_init(entropy, NULL, (const uint8_t *)"sim", 3) != FC_OK) return -1;
     return fc_crypto_selftest() == FC_OK ? 0 : -1;
 }
 
+int sim_enable_pin(void)
+{
+    env.pin = &pin; env.reset_storage = reset_kv; env.boot_us = now_us(NULL);
+    return client_pin_init(&pin, &store.kv);
+}
+int sim_power_cycle(void)
+{
+    env.boot_us = now_us(NULL);
+    return client_pin_init(&pin, &store.kv);
+}
+int sim_disconnect(void) { return client_pin_disconnect(&pin); }
+void sim_advance_seconds(int seconds) { clock_offset += (int64_t)seconds * 1000000; }
+void sim_fail_writes(int on) { fail_writes = on; }
+void sim_corrupt_pin(void) {
+    for (int i = 0; i < KV_MAX; i++) if (kv[i].used && !strcmp(kv[i].key, "pin_state")) kv[i].val[19] ^= 1;
+}
 void sim_set_up_mode(int mode) { up_mode = mode; }
 int sim_up_count(void) { return up_count; }
 

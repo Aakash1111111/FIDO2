@@ -1,3 +1,8 @@
+> **PIN-enabled firmware:** this server now requires user verification for
+> registration and login. Flash the PIN firmware and set the device PIN first:
+> [setup instructions](../docs/PIN_SETUP.md). Earlier no-PIN instructions below
+> describe the previous build.
+
 # Local relying party (test website + dashboards)
 
 Python / FastAPI / py_webauthn / SQLite. Serves:

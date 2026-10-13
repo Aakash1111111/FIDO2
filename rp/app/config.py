@@ -30,7 +30,7 @@ class Settings:
     admin_token: Optional[str]
     experiment_mode: bool
     challenge_ttl_s: int = 120
-    user_verification: str = "discouraged"  # token has no PIN / UV (see spec §9)
+    user_verification: str = "required"  # require device PIN verification
 
     @property
     def secure_cookies(self) -> bool:

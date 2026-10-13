@@ -47,6 +47,9 @@ esp_err_t hal_button_wait_press(uint32_t timeout_ms, bool (*poll_cb)(void *), vo
 
 esp_err_t hal_nvs_kv_open(cred_kv_t *out, size_t max_records);
 
+/* Deliberate factory reset only: destroys PIN and every credential. */
+esp_err_t hal_nvs_kv_erase_all(void);
+
 /* --- Native USB FIDO HID -------------------------------------------------- */
 
 /* Called from the TinyUSB task for every 64-byte OUT report. Keep it short
@@ -55,6 +58,7 @@ typedef void (*hal_usb_rx_fn)(const uint8_t pkt[64], void *ctx);
 
 esp_err_t hal_usb_hid_init(hal_usb_rx_fn rx_cb, void *ctx);
 bool hal_usb_hid_mounted(void);
+uint32_t hal_usb_session_epoch(void);
 
 /* Send one 64-byte IN report; waits up to timeout_ms for the endpoint. */
 bool hal_usb_hid_send(const uint8_t pkt[64], uint32_t timeout_ms);

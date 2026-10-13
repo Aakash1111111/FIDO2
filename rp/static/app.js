@@ -3,28 +3,39 @@ import { api, assertionToJSON, attestationToJSON, creationOptionsFromJSON, expla
 
 const $ = (id) => document.getElementById(id);
 const log = $("log");
+let inProgress = false;
 
 function status(msg, kind = "info") {
   const li = document.createElement("li");
   li.className = kind;
   li.textContent = `${new Date().toLocaleTimeString()}  ${msg}`;
   log.prepend(li);
+  $("log-empty").hidden = true;
   $("banner").textContent = msg;
   $("banner").className = `banner ${kind}`;
 }
 
 function busy(on) {
+  inProgress = on;
+  $("account-form").setAttribute("aria-busy", String(on));
+  $("username").disabled = on;
   for (const b of document.querySelectorAll("button")) b.disabled = on;
 }
 
 async function register() {
+  if (inProgress) return;
+  if (!$("username").value.trim()) {
+    status("Enter your username to continue.", "error");
+    $("username").focus();
+    return;
+  }
   const username = $("username").value.trim();
   busy(true);
   const t0 = performance.now();
   try {
     status("Requesting registration options…");
     const options = await api("/register/options", { username });
-    status("Press the BOOT button on your ESP32-S3 token now…", "action");
+    status("Follow the browser prompt: enter your security key PIN, then press BOOT when asked…", "action");
     const cred = await navigator.credentials.create({ publicKey: creationOptionsFromJSON(options) });
     status("Verifying with the server…");
     const res = await api("/register/verify", { credential: attestationToJSON(cred),
@@ -39,13 +50,19 @@ async function register() {
 }
 
 async function login() {
+  if (inProgress) return;
+  if (!$("username").value.trim()) {
+    status("Enter your username to continue.", "error");
+    $("username").focus();
+    return;
+  }
   const username = $("username").value.trim();
   busy(true);
   const t0 = performance.now();
   try {
     status("Requesting login options…");
     const options = await api("/login/options", { username });
-    status("Press the BOOT button on your ESP32-S3 token now…", "action");
+    status("Follow the browser prompt: enter your security key PIN, then press BOOT when asked…", "action");
     const cred = await navigator.credentials.get({ publicKey: requestOptionsFromJSON(options) });
     status("Verifying the signature with the server…");
     const res = await api("/login/verify", { credential: assertionToJSON(cred),
@@ -60,8 +77,10 @@ async function login() {
 }
 
 $("register").addEventListener("click", register);
-$("login").addEventListener("click", login);
-$("username").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
+$("account-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  login();
+});
 $("origin").textContent = location.origin;
 const problem = supportCheck();
 if (problem) status(problem, "error");

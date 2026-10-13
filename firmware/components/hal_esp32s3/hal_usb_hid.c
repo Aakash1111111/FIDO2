@@ -12,6 +12,7 @@
  * cross-host tracking identifier).
  */
 #include "hal_esp32s3.h"
+#include <stdatomic.h>
 
 #include <string.h>
 
@@ -53,7 +54,7 @@ static const tusb_desc_device_t s_device_desc = {
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor = 0x303A,
     .idProduct = 0x4004,
-    .bcdDevice = 0x0020,             /* firmware 0.2 */
+    .bcdDevice = 0x0040,             /* firmware 0.4 */
     .iManufacturer = 1,
     .iProduct = 2,
     .iSerialNumber = 0,
@@ -66,6 +67,15 @@ static const char *s_strings[] = {
     "ESP32-S3 FIDO2 Token",          /* 2: product */
     "FIDO CTAPHID",                  /* 3: interface */
 };
+
+static atomic_uint s_session_epoch;
+/* TinyUSB callbacks latch even a disconnect/reconnect between worker polls. */
+void tud_mount_cb(void) { atomic_fetch_add(&s_session_epoch, 1); }
+void tud_umount_cb(void) { atomic_fetch_add(&s_session_epoch, 1); }
+void tud_suspend_cb(bool remote_wakeup_en) {
+    (void)remote_wakeup_en; atomic_fetch_add(&s_session_epoch, 1);
+}
+uint32_t hal_usb_session_epoch(void) { return atomic_load(&s_session_epoch); }
 
 static hal_usb_rx_fn s_rx_cb;
 static void *s_rx_ctx;

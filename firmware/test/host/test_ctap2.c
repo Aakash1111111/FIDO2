@@ -85,7 +85,7 @@ static void setup(size_t max_records)
     kv_fail_writes = 0;
     const cred_kv_t k = { kv_get, kv_set, kv_foreach, NULL, max_records };
     cred_store_init(&store, &k);
-    env = (ctap2_env_t){ wait_up, NULL, NULL, NULL, AAGUID, &store };
+    env = (ctap2_env_t){ wait_up, NULL, NULL, NULL, AAGUID, &store, NULL, NULL, 0, NULL };
     up_result = CTAP2_OK;
     up_calls = 0;
 }
@@ -304,12 +304,41 @@ static void test_fuzz(void)
     up_result = CTAP2_OK;
 }
 
+/* Exercise the new PIN parser under ASan/UBSan as well as reference-client tests. */
+static void test_pin_parser_fuzz(void)
+{
+    setup(8);
+    client_pin_t pin;
+    CHECK(client_pin_init(&pin, &store.kv) == 0);
+    env.pin = &pin;
+    uint8_t req[350], resp[512];
+    srand(1908);
+    for (int i = 0; i < 20000; i++) {
+        size_t len = 1 + (size_t)rand() % (sizeof(req) - 1);
+        req[0] = CTAP2_CMD_CLIENT_PIN;
+        for (size_t j = 1; j < len; j++) req[j] = (uint8_t)rand();
+        size_t n = ctap2_handle(&env, req, len, resp, sizeof(resp));
+        CHECK(n >= 1 && n <= sizeof(resp));
+    }
+    /* Duplicate known keys, trailing CBOR, and interrupted reset marker fail closed. */
+    const uint8_t duplicate[] = {6, 0xa3, 1, 1, 1, 1, 2, 1};
+    CHECK(ctap2_handle(&env, duplicate, sizeof(duplicate), resp, sizeof(resp)) == 1);
+    CHECK(resp[0] == CTAP2_ERR_INVALID_CBOR);
+    const uint8_t marker_byte = 1;
+    CHECK(kv_set(NULL, "reset_pending", &marker_byte, 1) == 0);
+    CHECK(client_pin_init(&pin, &store.kv) != 0);
+    const uint8_t info[] = {4};
+    CHECK(ctap2_handle(&env, info, 1, resp, sizeof(resp)) == 1 && resp[0] == CTAP1_ERR_OTHER);
+    fc_zeroize(&pin, sizeof(pin));
+}
+
 int main(void)
 {
     if (fc_crypto_init(os_entropy, NULL, (const uint8_t *)"t", 1) != FC_OK) return 1;
     test_ceremonies();
     test_store_limits_and_failures();
     test_fuzz();
+    test_pin_parser_fuzz();
     fc_crypto_deinit();
     printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
